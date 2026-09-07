@@ -43,7 +43,15 @@ def test_resume_validates_inputs_and_output(tmp_path):
     assert read_prediction_cache(path, provenance, query, 1, columns) is None
     write_prediction_cache(path, prediction, provenance)
     assert read_prediction_cache(path, provenance, query, 1, columns).equals(prediction)
-    changed = prediction_provenance(train.with_columns(pl.lit(3.).alias('feature')), query, columns, 'cpu')
+    equivalent = prediction_provenance(
+        train.with_columns(pl.lit(2. + 1e-12).alias('feature')),
+        query.with_columns(pl.lit(2. - 1e-12).alias('feature')), columns, 'cpu')
+    assert equivalent == provenance
+    changed_target = prediction_provenance(
+        train.with_columns(pl.lit(1. + 1e-12).alias('remaining_passing_yards')), query, columns, 'cpu')
+    assert changed_target != provenance
+    assert read_prediction_cache(path, equivalent, query, 1, columns).equals(prediction)
+    changed = prediction_provenance(train.with_columns(pl.lit(2. + 1e-4).alias('feature')), query, columns, 'cpu')
     assert read_prediction_cache(path, changed, query, 1, columns) is None
     assert read_prediction_cache(path, provenance, query, 2, columns) is None
     assert read_prediction_cache(path, provenance, query, 1, ['other']) is None

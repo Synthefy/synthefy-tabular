@@ -35,11 +35,17 @@ def frame_sha256(frame):
 
 def prediction_provenance(train, query, columns, device):
     """Fingerprint all numerical inputs, their order, identities and runtime."""
-    inputs = list(dict.fromkeys([*IDENTITY_COLUMNS, *columns]))
+    # Match predict_week's actual numerical precision. Keep identities separate:
+    # a selected live-yardage column is Float32 in X but still Float64 when
+    # added back to the remaining-yard distribution.
+    model_inputs = [
+        *[pl.col(c).cast(pl.Float32).alias(f"model_input_{i}") for i, c in enumerate(columns)],
+        *[pl.col(c).cast(pl.Float64) if c == TARGET else pl.col(c) for c in IDENTITY_COLUMNS],
+    ]
     return {
-        "cache_version": 1,
-        "train_sha256": frame_sha256(train.select(inputs)),
-        "query_sha256": frame_sha256(query.select(inputs)),
+        "cache_version": 2,
+        "train_sha256": frame_sha256(train.select(model_inputs)),
+        "query_sha256": frame_sha256(query.select(model_inputs)),
         "selected_columns": list(columns),
         "checkpoint_sha256": CHECKPOINT_SHA256, "checkpoint_revision": REVISION,
         "runtime_versions": runtime_versions(), "device": str(device),
