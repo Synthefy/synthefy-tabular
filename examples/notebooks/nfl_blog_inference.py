@@ -18,9 +18,22 @@ from nfl_blog_features import blog_feature_columns
 REVISION = "157d6be39b5ba8809e4296d50abf3f41f3b72947"
 CHECKPOINT_SHA256 = "a13b2bc31d8db24d17bae6d04844e0adf669e446087b0b7a34c7b05045d61323"
 TARGET = "remaining_passing_yards"
-IDENTITY_COLUMNS = ["game_id", "season", "week", "kickoff_utc", "live_anchor_utc", "live_decision_utc",
-                    "team", "opponent_team", "actual_qb_id", "actual_qb_name", "official_passing_yards",
-                    "live_qb_attempts", "live_qb_passing_yards", TARGET]
+IDENTITY_COLUMNS = [
+    "game_id",
+    "season",
+    "week",
+    "kickoff_utc",
+    "live_anchor_utc",
+    "live_decision_utc",
+    "team",
+    "opponent_team",
+    "actual_qb_id",
+    "actual_qb_name",
+    "official_passing_yards",
+    "live_qb_attempts",
+    "live_qb_passing_yards",
+    TARGET,
+]
 
 
 def runtime_versions():
@@ -47,12 +60,21 @@ def prediction_provenance(train, query, columns, device):
         "train_sha256": frame_sha256(train.select(model_inputs)),
         "query_sha256": frame_sha256(query.select(model_inputs)),
         "selected_columns": list(columns),
-        "checkpoint_sha256": CHECKPOINT_SHA256, "checkpoint_revision": REVISION,
-        "runtime_versions": runtime_versions(), "device": str(device),
-        "settings": {"memory_policy": "exact", "context_cap": None, "context_start": 2018,
-                     "pruning_threshold": .75, "categorical_columns": [],
-                     "inference_config": "installed NoriRegressor default", "augmentations": ["yj"],
-                     "yj_skew_threshold": 10.0, "quantile_collapse": "mean"},
+        "checkpoint_sha256": CHECKPOINT_SHA256,
+        "checkpoint_revision": REVISION,
+        "runtime_versions": runtime_versions(),
+        "device": str(device),
+        "settings": {
+            "memory_policy": "exact",
+            "context_cap": None,
+            "context_start": 2018,
+            "pruning_threshold": 0.75,
+            "categorical_columns": [],
+            "inference_config": "installed NoriRegressor default",
+            "augmentations": ["yj"],
+            "yj_skew_threshold": 10.0,
+            "quantile_collapse": "mean",
+        },
         "implementation_sha256": hashlib.sha256(Path(__file__).read_bytes()).hexdigest(),
     }
 
@@ -87,11 +109,15 @@ def read_prediction_cache(path, provenance, query, train_rows, columns):
 def write_prediction_cache(path, prediction, provenance):
     path = Path(path)
     prediction.write_parquet(path)
-    path.with_suffix(".manifest.json").write_text(json.dumps({
-        "provenance": provenance,
-        "prediction_sha256": hashlib.sha256(path.read_bytes()).hexdigest(),
-    }, indent=2))
-
+    path.with_suffix(".manifest.json").write_text(
+        json.dumps(
+            {
+                "provenance": provenance,
+                "prediction_sha256": hashlib.sha256(path.read_bytes()).hexdigest(),
+            },
+            indent=2,
+        )
+    )
 
 
 def checkpoint_path():
@@ -143,8 +169,10 @@ def modeling_rows(rows, season=2025):
     return rows.filter(
         pl.col("live_evaluation_eligible")
         & pl.col("season").is_between(2018, season)
-        & pl.col(TARGET).is_not_null() & pl.col(TARGET).is_finite()
-        & pl.col("official_passing_yards").is_not_null() & pl.col("official_passing_yards").is_finite()
+        & pl.col(TARGET).is_not_null()
+        & pl.col(TARGET).is_finite()
+        & pl.col("official_passing_yards").is_not_null()
+        & pl.col("official_passing_yards").is_finite()
     ).sort(["season", "week", "live_decision_utc", "game_id", "team"])
 
 
@@ -168,13 +196,14 @@ def predict_week(estimator, train, query, columns):
         raise ValueError("Unexpected quantile bank shape")
     current = query["live_qb_passing_yards"].to_numpy().astype(np.float64)
     final = bank + current[:, None]
-    quantiles = np.asarray([[np.interp(t, taus, row) for t in (.1, .5, .9)] for row in final])
+    quantiles = np.asarray([[np.interp(t, taus, row) for t in (0.1, 0.5, 0.9)] for row in final])
     return query.select(IDENTITY_COLUMNS).with_columns(
         pl.lit(train.height, dtype=pl.Int64).alias("context_rows"),
         pl.lit(len(columns), dtype=pl.Int64).alias("selected_feature_count"),
         pl.lit(json.dumps(columns)).alias("selected_feature_columns_json"),
         pl.Series("nori_mean", np.asarray(distribution["mean"], dtype=np.float64) + current),
-        pl.Series("nori_p10", quantiles[:, 0]), pl.Series("nori_median", quantiles[:, 1]),
+        pl.Series("nori_p10", quantiles[:, 0]),
+        pl.Series("nori_median", quantiles[:, 1]),
         pl.Series("nori_p90", quantiles[:, 2]),
         pl.Series("nori_quantile_taus", [taus.tolist()] * query.height),
         pl.Series("nori_quantile_values", final.tolist()),
@@ -185,17 +214,31 @@ def prediction_metrics(frame):
     actual = frame["official_passing_yards"].to_numpy()
     residual = actual - frame["nori_median"].to_numpy()
     pinball = {}
-    for tau, column in ((.1, "nori_p10"), (.5, "nori_median"), (.9, "nori_p90")):
+    for tau, column in ((0.1, "nori_p10"), (0.5, "nori_median"), (0.9, "nori_p90")):
         error = actual - frame[column].to_numpy()
         pinball[str(tau)] = float(np.maximum(tau * error, (tau - 1) * error).mean())
-    return {"rows": frame.height, "mae": float(np.abs(residual).mean()),
-            "rmse": float(np.sqrt(np.square(residual).mean())), "pinball_loss": pinball,
-            "mean_pinball_loss": float(np.mean(list(pinball.values()))),
-            "p10_p90_coverage": float(((actual >= frame["nori_p10"].to_numpy()) &
-                                      (actual <= frame["nori_p90"].to_numpy())).mean())}
+    return {
+        "rows": frame.height,
+        "mae": float(np.abs(residual).mean()),
+        "rmse": float(np.sqrt(np.square(residual).mean())),
+        "pinball_loss": pinball,
+        "mean_pinball_loss": float(np.mean(list(pinball.values()))),
+        "p10_p90_coverage": float(
+            ((actual >= frame["nori_p10"].to_numpy()) & (actual <= frame["nori_p90"].to_numpy())).mean()
+        ),
+    }
 
 
-def run_blog_predictions(q1_rows, ht_rows, output_dir, weeks=tuple(range(1, 19)), device="cpu", season=2025, horizons=("q1", "halftime"), resume=False):
+def run_blog_predictions(
+    q1_rows,
+    ht_rows,
+    output_dir,
+    weeks=tuple(range(1, 19)),
+    device="cpu",
+    season=2025,
+    horizons=("q1", "halftime"),
+    resume=False,
+):
     """Compute checkpoints without a context cap; optionally resume verified local work.
 
     ``weeks`` limits scoring origins, not historical context. CPU execution of
@@ -223,7 +266,10 @@ def run_blog_predictions(q1_rows, ht_rows, output_dir, weeks=tuple(range(1, 19))
             if train.is_empty() or query.is_empty():
                 raise ValueError(f"Empty context/query for {horizon} week {week}")
             columns = select_columns(train, candidates)
-            print(f"{horizon} week {week}: {train.height} context, {query.height} queries, {len(columns)} features", flush=True)
+            print(
+                f"{horizon} week {week}: {train.height} context, {query.height} queries, {len(columns)} features",
+                flush=True,
+            )
             path = directory / f"{horizon}_{season}_week{week}_predictions.parquet"
             provenance = prediction_provenance(train, query, columns, device)
             prediction = read_prediction_cache(path, provenance, query, train.height, columns) if resume else None
@@ -236,12 +282,22 @@ def run_blog_predictions(q1_rows, ht_rows, output_dir, weeks=tuple(range(1, 19))
             selections[week] = columns
         frame = pl.concat(predictions).sort(["week", "live_decision_utc", "game_id", "team"])
         frame.write_parquet(directory / f"{horizon}_{season}_predictions.parquet")
-        (directory / f"{horizon}_{season}_manifest.json").write_text(json.dumps({
-            "checkpoint_revision": REVISION, "checkpoint_sha256": CHECKPOINT_SHA256,
-            "runtime_versions": {name: version(name) for name in ("synthefy-nori", "numpy", "torch", "polars")},
-            "device": device,
-            "context_start": 2018, "context_cap": None, "categorical_columns": [],
-            "pruning_threshold": .75, "selected_columns": selections, "metrics": prediction_metrics(frame),
-        }, indent=2))
+        (directory / f"{horizon}_{season}_manifest.json").write_text(
+            json.dumps(
+                {
+                    "checkpoint_revision": REVISION,
+                    "checkpoint_sha256": CHECKPOINT_SHA256,
+                    "runtime_versions": {name: version(name) for name in ("synthefy-nori", "numpy", "torch", "polars")},
+                    "device": device,
+                    "context_start": 2018,
+                    "context_cap": None,
+                    "categorical_columns": [],
+                    "pruning_threshold": 0.75,
+                    "selected_columns": selections,
+                    "metrics": prediction_metrics(frame),
+                },
+                indent=2,
+            )
+        )
         outputs[horizon] = frame
     return outputs

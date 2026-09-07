@@ -2,6 +2,7 @@
 
 Historical minute quotes are not evidence of available quantity or guaranteed fills.
 """
+
 from __future__ import annotations
 import math
 import re
@@ -15,8 +16,9 @@ import numpy as np
 import polars as pl
 import requests
 from nfl_passing_yards_markets import PublicKalshi
+
 UTC = timezone.utc
-EDGE_THRESHOLD = .10
+EDGE_THRESHOLD = 0.10
 NUMERIC_TOLERANCE = 1e-12
 KEYS = ["game_id", "team"]
 IDENTITY_COLUMNS = (
@@ -54,24 +56,30 @@ SELECTED_COLUMNS = (
 def _parse_time(value: str) -> datetime:
     return datetime.fromisoformat(value).astimezone(UTC)
 
+
 def _as_datetime(value: object) -> datetime:
     if isinstance(value, datetime):
         return value.astimezone(UTC)
     return _parse_time(str(value))
 
+
 def normalize_name(value: str) -> str:
     return re.sub(r"[^a-z0-9]", "", value.lower())
 
+
 def market_player_name(title: str) -> str:
     return re.split(r"\s+records\s+\d+\+|:\s*\d+\+", title, maxsplit=1, flags=re.IGNORECASE)[0].strip()
+
 
 def kalshi_taker_fee(price: float, contracts: int, rate: float) -> float:
     raw_fee = rate * contracts * price * (1.0 - price)
     return math.ceil(raw_fee * 100.0 - 1e-12) / 100.0
 
+
 def bid_ask_spread(bid: float, ask: float) -> float:
     """Respect exact decimal price cutoffs (0.55 - 0.45 is ten cents)."""
     return float(Decimal(str(ask)) - Decimal(str(bid)))
+
 
 def _close_value(side: dict[str, Any] | None) -> float | None:
     if not side:
@@ -84,6 +92,7 @@ def _close_value(side: dict[str, Any] | None) -> float | None:
     # Fixed-point strings are dollars; legacy integer fields are cents.
     return float(value) if isinstance(value, str) else float(value) / 100.0
 
+
 def _settlement_value(market: dict[str, Any]) -> float:
     value = market.get("settlement_value_dollars")
     if value is not None:
@@ -93,6 +102,7 @@ def _settlement_value(market: dict[str, Any]) -> float:
     if market.get("result") == "no":
         return 0.0
     raise ValueError(f"Market {market['ticker']} lacks a final settlement value")
+
 
 def match_live_markets_to_predictions(
     markets: list[dict[str, Any]],
@@ -150,6 +160,7 @@ def match_live_markets_to_predictions(
         "ambiguous_market_rows": ambiguous,
     }
 
+
 def probability_over_line(taus: list[float], quantile_values: list[float], line: float) -> float:
     levels = np.asarray(taus, dtype=np.float64)
     values = np.asarray(quantile_values, dtype=np.float64)
@@ -160,6 +171,7 @@ def probability_over_line(taus: list[float], quantile_values: list[float], line:
     values = np.maximum.accumulate(values)
     probability = 1.0 - np.interp(line, values, levels, left=0.0, right=1.0)
     return float(np.clip(probability, 0.0, 1.0))
+
 
 def _empty_decision(prediction: dict[str, Any], status: str) -> dict[str, Any]:
     return {
@@ -194,6 +206,7 @@ def _empty_decision(prediction: dict[str, Any], status: str) -> dict[str, Any]:
         "realized_profit": None,
     }
 
+
 def run_live_primary_strategy(
     matched_markets: list[dict[str, Any]],
     predictions: pl.DataFrame,
@@ -207,10 +220,7 @@ def run_live_primary_strategy(
 ) -> tuple[pl.DataFrame, pl.DataFrame, dict[str, Any]]:
     if line_policy not in {"max_edge", "market_balanced"}:
         raise ValueError(f"unsupported line policy: {line_policy}")
-    prediction_map = {
-        (str(row["game_id"]), str(row["actual_qb_id"])): row
-        for row in predictions.to_dicts()
-    }
+    prediction_map = {(str(row["game_id"]), str(row["actual_qb_id"])): row for row in predictions.to_dicts()}
     available_keys: set[tuple[str, str]] = set()
     quoted_keys: set[tuple[str, str]] = set()
     fresh_keys: set[tuple[str, str]] = set()
@@ -359,12 +369,14 @@ def _float(value: object, label: str) -> float:
         raise ValueError(f"{label} must be finite")
     return result
 
+
 def q1_yes_probability(prediction: dict[str, Any], integer_line: float) -> float:
     return probability_over_line(
         prediction["nori_quantile_taus"],
         prediction["nori_quantile_values"],
         integer_line - 0.5,
     )
+
 
 def build_confirmed_decisions(
     q1: pl.DataFrame,
@@ -377,9 +389,7 @@ def build_confirmed_decisions(
     q1 = q1.sort(KEYS)
     halftime = halftime.sort(KEYS)
     q1_predictions = q1_predictions.sort(KEYS)
-    if not q1.select(KEYS).equals(halftime.select(KEYS)) or not q1.select(KEYS).equals(
-        q1_predictions.select(KEYS)
-    ):
+    if not q1.select(KEYS).equals(halftime.select(KEYS)) or not q1.select(KEYS).equals(q1_predictions.select(KEYS)):
         raise ValueError("probability-confirmation sources are not aligned")
     records: list[dict[str, Any]] = []
     for q1_row, half_row, prediction in zip(
@@ -389,9 +399,10 @@ def build_confirmed_decisions(
         strict=True,
     ):
         q1_eligible = bool(q1_row["bet_taken"])
-        half_cost_eligible = bool(half_row["bet_taken"]) and _float(
-            half_row["expected_net_edge"], "halftime expected edge"
-        ) >= EDGE_THRESHOLD - NUMERIC_TOLERANCE
+        half_cost_eligible = (
+            bool(half_row["bet_taken"])
+            and _float(half_row["expected_net_edge"], "halftime expected edge") >= EDGE_THRESHOLD - NUMERIC_TOLERANCE
+        )
         halftime_reached = not q1_eligible
         q1_side_probability = None
         halftime_side_probability = None
@@ -415,13 +426,9 @@ def build_confirmed_decisions(
                 q1_side_probability = 1.0 - q1_probability_yes
             else:
                 raise ValueError("probability-confirmation source has an invalid side")
-            halftime_side_probability = _float(
-                half_row["model_probability"], "halftime side probability"
-            )
+            halftime_side_probability = _float(half_row["model_probability"], "halftime side probability")
             probability_change = halftime_side_probability - q1_side_probability
-            probability_confirmed = (
-                halftime_side_probability + NUMERIC_TOLERANCE >= q1_side_probability
-            )
+            probability_confirmed = halftime_side_probability + NUMERIC_TOLERANCE >= q1_side_probability
             if probability_confirmed:
                 selected = half_row
                 selected_horizon = "halftime"
@@ -460,43 +467,50 @@ def build_confirmed_decisions(
     return decisions
 
 
-
 def quote_after_anchor(client, market):
     """Same anchor-to-decision minute-close request as the original experiment."""
     anchor = int(_as_datetime(market["live_anchor_utc"]).timestamp())
     decision = int(_as_datetime(market["live_decision_utc"]).timestamp())
     payload = client.get(
         f"historical/markets/{quote(market['ticker'], safe='')}/candlesticks",
-        start_ts=anchor, end_ts=decision, period_interval=1,
+        start_ts=anchor,
+        end_ts=decision,
+        period_interval=1,
     )
     candles = [c for c in payload["candlesticks"] if anchor <= int(c["end_period_ts"]) <= decision]
-    result = dict(ticker=market["ticker"], anchor_ts=anchor, decision_ts=decision,
-                  quote_ts=None, yes_bid=None, yes_ask=None)
+    result = dict(
+        ticker=market["ticker"], anchor_ts=anchor, decision_ts=decision, quote_ts=None, yes_bid=None, yes_ask=None
+    )
     if candles:
         candle = max(candles, key=lambda c: int(c["end_period_ts"]))
-        result.update(quote_ts=int(candle["end_period_ts"]),
-                      yes_bid=_close_value(candle.get("yes_bid")),
-                      yes_ask=_close_value(candle.get("yes_ask")))
+        result.update(
+            quote_ts=int(candle["end_period_ts"]),
+            yes_bid=_close_value(candle.get("yes_bid")),
+            yes_ask=_close_value(candle.get("yes_ask")),
+        )
     return result
 
 
-def summarize(decisions, execution_cost=.05):
+def summarize(decisions, execution_cost=0.05):
     if not math.isfinite(execution_cost) or execution_cost < 0:
         raise ValueError("Execution allowance must be finite and nonnegative")
     trades = decisions.filter(pl.col("bet_taken")).to_dicts()
     capital = sum(r["capital"] + execution_cost for r in trades)
     pnl = sum(r["profit"] - execution_cost for r in trades)
     return {
-        "status": "quote_based_simulation", "bets": len(trades),
+        "status": "quote_based_simulation",
+        "bets": len(trades),
         "games": len({r["game_id"] for r in trades}),
         "wins": sum(r["settlement_value"] == 1 for r in trades),
-        "capital": capital, "pnl": pnl, "roi": pnl / capital if capital else None,
+        "capital": capital,
+        "pnl": pnl,
+        "roi": pnl / capital if capital else None,
         "execution_cost": execution_cost,
         "limitation": "Recorded quotes do not establish available size or fills. 2025 was used for strategy exploration.",
     }
 
 
-def replay_blog_strategy(q1, halftime, markets, quotes_by_horizon, execution_cost=.05):
+def replay_blog_strategy(q1, halftime, markets, quotes_by_horizon, execution_cost=0.05):
     """Original selections: Q1 balanced market, then confirmed max-edge halftime.
 
     Input quantiles predict final passing yards (not remaining yards). No future
@@ -512,10 +526,17 @@ def replay_blog_strategy(q1, halftime, markets, quotes_by_horizon, execution_cos
     coverage = {}
     live = SimpleNamespace(maximum_quote_age_minutes=5)
     for horizon, predictions in (("q1", q1), ("halftime", halftime)):
-        strategy = SimpleNamespace(contracts_per_qb_game=1, primary_min_net_edge=.10 if horizon == "q1" else .05, max_spread=.10)
+        strategy = SimpleNamespace(
+            contracts_per_qb_game=1, primary_min_net_edge=0.10 if horizon == "q1" else 0.05, max_spread=0.10
+        )
         matched, counts = match_live_markets_to_predictions(markets, predictions)
         decisions[horizon], _, _ = run_live_primary_strategy(
-            matched, predictions, quotes_by_horizon[horizon], strategy, live, .07,
+            matched,
+            predictions,
+            quotes_by_horizon[horizon],
+            strategy,
+            live,
+            0.07,
             line_policy="market_balanced" if horizon == "q1" else "max_edge",
         )
         coverage[horizon] = counts
@@ -526,11 +547,13 @@ def replay_blog_strategy(q1, halftime, markets, quotes_by_horizon, execution_cos
     )
     report = summarize(combined, execution_cost)
     report["coverage"] = coverage
-    report["checkpoints"] = {h: summarize(combined.filter(pl.col("selected_horizon") == h), execution_cost) for h in ("q1", "halftime")}
+    report["checkpoints"] = {
+        h: summarize(combined.filter(pl.col("selected_horizon") == h), execution_cost) for h in ("q1", "halftime")
+    }
     return combined, report
 
 
-def run_kalshi_backtest(q1, halftime, cache_dir, execution_cost=.05):
+def run_kalshi_backtest(q1, halftime, cache_dir, execution_cost=0.05):
     """Fetch public archives; network unavailability never invalidates forecasts.
 
     A failed page/quote aborts only the optional market stage. Do not report ROI
@@ -549,5 +572,9 @@ def run_kalshi_backtest(q1, halftime, cache_dir, execution_cost=.05):
                     print(f"Kalshi {horizon}: {index + 1}/{len(matched)} quotes", flush=True)
         return replay_blog_strategy(q1, halftime, markets, quotes, execution_cost)
     except (requests.RequestException, FileNotFoundError, TimeoutError) as error:
-        return pl.DataFrame(), {"status": "unavailable", "reason": str(error), "roi": None,
-                                "note": "Predictions are retained. Rerun this optional stage when public history is available."}
+        return pl.DataFrame(), {
+            "status": "unavailable",
+            "reason": str(error),
+            "roi": None,
+            "note": "Predictions are retained. Rerun this optional stage when public history is available.",
+        }

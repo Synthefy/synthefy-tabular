@@ -111,10 +111,7 @@ def _qb_history(player_stats: pl.DataFrame, schedules: pl.DataFrame, config: Dat
             pl.col(component).cum_sum().over(["player_id", "season"]).alias(f"{component}_season_sum")
             for component in _ROLLING_COMPONENTS
         ],
-        pl.col("history_game_count")
-        .cum_sum()
-        .over(["player_id", "season"])
-        .alias("history_games_season"),
+        pl.col("history_game_count").cum_sum().over(["player_id", "season"]).alias("history_games_season"),
     )
     return history
 
@@ -252,9 +249,7 @@ def build_qb_rolling_features(
     )
 
     rows = (
-        base_rows.with_columns(
-            (pl.col("season").cast(pl.Int64) * 100 + pl.col("week")).alias("prediction_week_order")
-        )
+        base_rows.with_columns((pl.col("season").cast(pl.Int64) * 100 + pl.col("week")).alias("prediction_week_order"))
         .sort("prediction_week_order")
         .join_asof(
             history_features.sort("history_week_order"),
@@ -273,10 +268,7 @@ def build_qb_rolling_features(
     ]
     rows = rows.with_columns(
         *[
-            pl.when(pl.col("qb_history_season") == pl.col("season"))
-            .then(pl.col(column))
-            .otherwise(None)
-            .alias(column)
+            pl.when(pl.col("qb_history_season") == pl.col("season")).then(pl.col(column)).otherwise(None).alias(column)
             for column in season_value_columns
         ],
         pl.when(pl.col("qb_history_season") == pl.col("season"))

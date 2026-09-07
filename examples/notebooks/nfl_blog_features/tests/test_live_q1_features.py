@@ -76,9 +76,7 @@ def _pbp() -> pl.DataFrame:
 
 
 def test_q1_boundary_uses_earliest_q2_timestamp_not_first_play_id() -> None:
-    plays = _pbp().with_columns(
-        pl.col("time_of_day").str.to_datetime(time_zone="UTC").alias("_play_timestamp_utc")
-    )
+    plays = _pbp().with_columns(pl.col("time_of_day").str.to_datetime(time_zone="UTC").alias("_play_timestamp_utc"))
     boundary = q1_boundaries(plays).row(0, named=True)
     assert boundary["live_anchor_play_id"] == 40
     assert boundary["live_anchor_utc"] == datetime(2025, 9, 7, 17, 49, tzinfo=UTC)

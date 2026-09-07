@@ -4,6 +4,7 @@ Downloads nflverse via nflreadpy; no saved predictions or private artifacts.
 Retrospectively corrected play data and play timestamps are NOT a real-time
 publication feed. This new baseline does not reproduce the blog's selected model.
 """
+
 from __future__ import annotations
 
 import argparse
@@ -19,9 +20,21 @@ from synthefy_nori import NoriRegressor
 
 
 CATEGORIES = ["actual_qb_id", "team", "opponent_team"]
-LIVE = ["yards_so_far", "attempts_so_far", "dropbacks_so_far", "sacks_so_far",
-        "epa_per_dropback", "cpoe", "air_yards_per_attempt", "sack_rate", "ypa",
-        "offense_plays", "offense_pass_rate", "offense_epa", "score_margin"]
+LIVE = [
+    "yards_so_far",
+    "attempts_so_far",
+    "dropbacks_so_far",
+    "sacks_so_far",
+    "epa_per_dropback",
+    "cpoe",
+    "air_yards_per_attempt",
+    "sack_rate",
+    "ypa",
+    "offense_plays",
+    "offense_pass_rate",
+    "offense_epa",
+    "score_margin",
+]
 
 
 def _load(cache_dir, kind, season):
@@ -32,8 +45,17 @@ def _load(cache_dir, kind, season):
         loader = nfl.load_pbp if kind == "pbp" else nfl.load_player_stats
         loader([season]).write_parquet(path)
     manifest_path = Path(cache_dir) / f"{kind}_{season}.source.json"
-    manifest_path.write_text(json.dumps({"loader": f"nflreadpy.load_{kind}", "season": season,
-        "sha256": hashlib.sha256(path.read_bytes()).hexdigest(), "bytes": path.stat().st_size}, indent=2))
+    manifest_path.write_text(
+        json.dumps(
+            {
+                "loader": f"nflreadpy.load_{kind}",
+                "season": season,
+                "sha256": hashlib.sha256(path.read_bytes()).hexdigest(),
+                "bytes": path.stat().st_size,
+            },
+            indent=2,
+        )
+    )
     return pd.read_parquet(path)
 
 
@@ -86,30 +108,45 @@ def build_dataset(cache_dir, seasons, decision_delay_seconds=120):
                     label = stats.loc[(game_id, qb_id)]
                     if isinstance(label, pd.DataFrame):
                         raise ValueError(f"Duplicate official label: {game_id}/{qb_id}")
-                    qb = offense.loc[(offense.passer_player_id == qb_id) |
-                                     ((offense.rusher_player_id == qb_id) & (offense.qb_dropback == 1))]
+                    qb = offense.loc[
+                        (offense.passer_player_id == qb_id)
+                        | ((offense.rusher_player_id == qb_id) & (offense.qb_dropback == 1))
+                    ]
                     drops = qb.loc[qb.qb_dropback == 1]
                     attempts = qb.loc[(qb.pass_attempt == 1) & (qb.sack != 1) & (qb.two_point_attempt != 1)]
                     valid = offense.loc[offense.play_type.isin(["pass", "run"])]
                     yards = _sum(qb.loc[qb.two_point_attempt != 1], "passing_yards")
                     home = team == last.home_team
-                    rec = dict(game_id=game_id, game_date=str(last.game_date), season=int(season),
-                               week=int(last.week), team=team,
-                               opponent_team=last.away_team if home else last.home_team,
-                               actual_qb_id=qb_id, actual_qb_name=label.player_display_name,
-                               checkpoint=checkpoint, live_anchor_utc=anchor,
-                               game_end_utc=game._utc.max() + pd.Timedelta(minutes=5),
-                               decision_utc=anchor + pd.Timedelta(seconds=decision_delay_seconds),
-                               official_passing_yards=float(label.passing_yards),
-                               home=int(home), seconds_remaining=3600-quarter*900,
-                               yards_so_far=yards, attempts_so_far=float(len(attempts)),
-                               dropbacks_so_far=float(len(drops)), sacks_so_far=_sum(qb, "sack"),
-                               epa_per_dropback=_mean(drops, "epa"), cpoe=_mean(attempts, "cpoe"),
-                               air_yards_per_attempt=_mean(attempts, "air_yards"),
-                               sack_rate=_sum(qb, "sack") / max(len(drops), 1),
-                               ypa=yards / max(len(attempts), 1), offense_plays=float(len(valid)),
-                               offense_pass_rate=_mean(valid, "qb_dropback"), offense_epa=_mean(valid, "epa"),
-                               score_margin=float(last.total_home_score-last.total_away_score)*(1 if home else -1))
+                    rec = dict(
+                        game_id=game_id,
+                        game_date=str(last.game_date),
+                        season=int(season),
+                        week=int(last.week),
+                        team=team,
+                        opponent_team=last.away_team if home else last.home_team,
+                        actual_qb_id=qb_id,
+                        actual_qb_name=label.player_display_name,
+                        checkpoint=checkpoint,
+                        live_anchor_utc=anchor,
+                        game_end_utc=game._utc.max() + pd.Timedelta(minutes=5),
+                        decision_utc=anchor + pd.Timedelta(seconds=decision_delay_seconds),
+                        official_passing_yards=float(label.passing_yards),
+                        home=int(home),
+                        seconds_remaining=3600 - quarter * 900,
+                        yards_so_far=yards,
+                        attempts_so_far=float(len(attempts)),
+                        dropbacks_so_far=float(len(drops)),
+                        sacks_so_far=_sum(qb, "sack"),
+                        epa_per_dropback=_mean(drops, "epa"),
+                        cpoe=_mean(attempts, "cpoe"),
+                        air_yards_per_attempt=_mean(attempts, "air_yards"),
+                        sack_rate=_sum(qb, "sack") / max(len(drops), 1),
+                        ypa=yards / max(len(attempts), 1),
+                        offense_plays=float(len(valid)),
+                        offense_pass_rate=_mean(valid, "qb_dropback"),
+                        offense_epa=_mean(valid, "epa"),
+                        score_margin=float(last.total_home_score - last.total_away_score) * (1 if home else -1),
+                    )
                     rec["remaining_yards"] = rec["official_passing_yards"] - yards
                     records.append(rec)
     rows = pd.DataFrame(records).sort_values(["season", "week", "game_id", "checkpoint"]).reset_index(drop=True)
@@ -124,8 +161,10 @@ def add_history(rows):
     for checkpoint, idx in rows.groupby("checkpoint").groups.items():
         part = rows.loc[idx]
         for index, row in part.iterrows():
-            prior = part.loc[((part.season < row.season) | ((part.season == row.season) & (part.week < row.week)))
-                             & (part.game_end_utc < row.live_anchor_utc)]
+            prior = part.loc[
+                ((part.season < row.season) | ((part.season == row.season) & (part.week < row.week)))
+                & (part.game_end_utc < row.live_anchor_utc)
+            ]
             qb = prior.loc[prior.actual_qb_id == row.actual_qb_id]
             for window in [3, 8]:
                 hist = qb.tail(window)
@@ -145,8 +184,9 @@ def feature_columns(rows):
     return ["week", "home", "seconds_remaining"] + LIVE + [c for c in rows if "_prior" in c or c == "rest_days"]
 
 
-def predict_weekly(rows, test_season, max_week=18, device="cpu", context_limit=512,
-                   min_week=1, model="nori-6m", weekly_update=True):
+def predict_weekly(
+    rows, test_season, max_week=18, device="cpu", context_limit=512, min_week=1, model="nori-6m", weekly_update=True
+):
     """Fresh public Nori predictions, independently per checkpoint and week."""
     if context_limit < 2:
         raise ValueError("context_limit must be >= 2")
@@ -156,8 +196,10 @@ def predict_weekly(rows, test_season, max_week=18, device="cpu", context_limit=5
     for week in range(min_week, max_week + 1):
         for checkpoint in ["q1", "halftime"]:
             available = rows.loc[rows.checkpoint == checkpoint]
-            train = available.loc[(available.season < test_season) |
-                                  (weekly_update & (available.season == test_season) & (available.week < week))]
+            train = available.loc[
+                (available.season < test_season)
+                | (weekly_update & (available.season == test_season) & (available.week < week))
+            ]
             train = train.sort_values(["season", "week", "game_id"]).tail(context_limit)
             test = available.loc[(available.season == test_season) & (available.week == week)].copy()
             if test.empty:
@@ -196,10 +238,16 @@ def prediction_metrics(predictions):
         q = np.stack(part.quantile_values)
         taus = np.asarray(part.iloc[0].quantile_levels)
         residual = actual[:, None] - q
-        results.append(dict(checkpoint=checkpoint, rows=len(part), mae=float(np.abs(error).mean()),
-                            rmse=float(np.sqrt((error**2).mean())),
-                            pinball_loss=float(np.maximum(taus*residual, (taus-1)*residual).mean()),
-                            p10_p90_coverage=float(((actual >= part.p10) & (actual <= part.p90)).mean())))
+        results.append(
+            dict(
+                checkpoint=checkpoint,
+                rows=len(part),
+                mae=float(np.abs(error).mean()),
+                rmse=float(np.sqrt((error**2).mean())),
+                pinball_loss=float(np.maximum(taus * residual, (taus - 1) * residual).mean()),
+                p10_p90_coverage=float(((actual >= part.p10) & (actual <= part.p90)).mean()),
+            )
+        )
     return pd.DataFrame(results)
 
 
@@ -214,15 +262,15 @@ def main():
     parser.add_argument("--model", default="nori-6m")
     parser.add_argument("--features-only", action="store_true")
     args = parser.parse_args()
-    rows = build_dataset(args.cache_dir, range(args.start_season, args.test_season+1))
-    rows.to_parquet(Path(args.cache_dir)/"checkpoint_features.parquet", index=False)
-    print(f"Built {len(rows)} checkpoint rows, {len(feature_columns(rows))+len(CATEGORIES)} features")
+    rows = build_dataset(args.cache_dir, range(args.start_season, args.test_season + 1))
+    rows.to_parquet(Path(args.cache_dir) / "checkpoint_features.parquet", index=False)
+    print(f"Built {len(rows)} checkpoint rows, {len(feature_columns(rows)) + len(CATEGORIES)} features")
     if not args.features_only:
         pred = predict_weekly(rows, args.test_season, args.max_week, args.device, args.context_limit, model=args.model)
-        pred.to_parquet(Path(args.cache_dir)/"predictions.parquet", index=False)
+        pred.to_parquet(Path(args.cache_dir) / "predictions.parquet", index=False)
         metrics = prediction_metrics(pred)
         print(metrics.to_string(index=False))
-        (Path(args.cache_dir)/"metrics.json").write_text(json.dumps(metrics.to_dict("records"), indent=2))
+        (Path(args.cache_dir) / "metrics.json").write_text(json.dumps(metrics.to_dict("records"), indent=2))
 
 
 if __name__ == "__main__":

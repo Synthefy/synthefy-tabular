@@ -34,10 +34,17 @@ class PublicKalshi:
         self.cache_dir = Path(cache_dir) / "kalshi"
         self.cache_dir.mkdir(parents=True, exist_ok=True)
         self.session = requests.Session()
-        self.session.mount("https://", HTTPAdapter(max_retries=Retry(
-            total=5, backoff_factor=1, status_forcelist=[429, 500, 502, 503, 504],
-            allowed_methods=["GET"],
-        )))
+        self.session.mount(
+            "https://",
+            HTTPAdapter(
+                max_retries=Retry(
+                    total=5,
+                    backoff_factor=1,
+                    status_forcelist=[429, 500, 502, 503, 504],
+                    allowed_methods=["GET"],
+                )
+            ),
+        )
 
     def get(self, endpoint, **params):
         url = f"{BASE_URL}/{endpoint}"
@@ -45,15 +52,22 @@ class PublicKalshi:
         path = self.cache_dir / (hashlib.sha256(identity.encode()).hexdigest() + ".json")
         if path.exists():
             record = json.loads(path.read_text())
-            if hashlib.sha256(json.dumps(record["payload"], sort_keys=True).encode()).hexdigest() != record["payload_sha256"]:
+            if (
+                hashlib.sha256(json.dumps(record["payload"], sort_keys=True).encode()).hexdigest()
+                != record["payload_sha256"]
+            ):
                 raise ValueError(f"Corrupt cached payload: {path}")
             return record["payload"]
         response = self.session.get(url, params=params, timeout=60)
         response.raise_for_status()
         payload = response.json()
-        record = dict(url=response.url, retrieved_utc=pd.Timestamp.now(tz="UTC").isoformat(),
-                      sha256=hashlib.sha256(response.content).hexdigest(),
-                      payload_sha256=hashlib.sha256(json.dumps(payload, sort_keys=True).encode()).hexdigest(), payload=payload)
+        record = dict(
+            url=response.url,
+            retrieved_utc=pd.Timestamp.now(tz="UTC").isoformat(),
+            sha256=hashlib.sha256(response.content).hexdigest(),
+            payload_sha256=hashlib.sha256(json.dumps(payload, sort_keys=True).encode()).hexdigest(),
+            payload=payload,
+        )
         temporary = path.with_suffix(".tmp")
         temporary.write_text(json.dumps(record))
         temporary.replace(path)
@@ -82,13 +96,19 @@ class PublicKalshi:
         if pd.isna(decision) or decision.tzinfo is None:
             raise ValueError("Decision timestamp must be known and timezone-aware")
         end = int(decision.timestamp())
-        payload = self.get(f"historical/markets/{quote(ticker, safe='')}/candlesticks",
-                           start_ts=end - max_age_seconds - 60, end_ts=end, period_interval=1)
-        candles = [c for c in payload["candlesticks"]
-                   if 0 <= decision.timestamp() - c["end_period_ts"] <= max_age_seconds]
+        payload = self.get(
+            f"historical/markets/{quote(ticker, safe='')}/candlesticks",
+            start_ts=end - max_age_seconds - 60,
+            end_ts=end,
+            period_interval=1,
+        )
+        candles = [
+            c for c in payload["candlesticks"] if 0 <= decision.timestamp() - c["end_period_ts"] <= max_age_seconds
+        ]
         if not candles:
             return {}
         candle = max(candles, key=lambda c: c["end_period_ts"])
+
         def close(field):
             values = candle.get(field) or {}
             if values.get("close_dollars") is not None:
@@ -98,9 +118,13 @@ class PublicKalshi:
                 return None
             # Historical fixed-point strings are dollars; legacy integer fields are cents.
             return float(value) if isinstance(value, str) else float(value) / 100
-        return dict(quote_utc=pd.Timestamp(candle["end_period_ts"], unit="s", tz="UTC").isoformat(),
-                    quote_age_seconds=decision.timestamp() - candle["end_period_ts"],
-                    yes_bid=close("yes_bid"), yes_ask=close("yes_ask"))
+
+        return dict(
+            quote_utc=pd.Timestamp(candle["end_period_ts"], unit="s", tz="UTC").isoformat(),
+            quote_age_seconds=decision.timestamp() - candle["end_period_ts"],
+            yes_bid=close("yes_bid"),
+            yes_ask=close("yes_ask"),
+        )
 
 
 def normalize_name(name):
@@ -109,8 +133,7 @@ def normalize_name(name):
 
 def market_matches(market, row):
     """Require exact normalized player and original scheduled game date/team pair."""
-    name = re.split(r"\s+records\s+\d+\+|:\s*\d+\+", market.get("title", ""),
-                    maxsplit=1, flags=re.I)[0]
+    name = re.split(r"\s+records\s+\d+\+|:\s*\d+\+", market.get("title", ""), maxsplit=1, flags=re.I)[0]
     if normalize_name(name) != normalize_name(row["actual_qb_name"]):
         return False
     day = pd.Timestamp(row["game_date"]).strftime("%y%b%d").upper()
@@ -123,9 +146,16 @@ def market_matches(market, row):
 
 def probability_over(levels, values, threshold):
     levels, values = np.asarray(levels, float), np.asarray(values, float)
-    if (levels.ndim != 1 or values.shape != levels.shape or len(levels) < 2
-            or not np.isfinite(levels).all() or not np.isfinite(values).all()
-            or np.any(np.diff(levels) <= 0) or levels[0] <= 0 or levels[-1] >= 1):
+    if (
+        levels.ndim != 1
+        or values.shape != levels.shape
+        or len(levels) < 2
+        or not np.isfinite(levels).all()
+        or not np.isfinite(values).all()
+        or np.any(np.diff(levels) <= 0)
+        or levels[0] <= 0
+        or levels[-1] >= 1
+    ):
         raise ValueError("Invalid predictive quantiles")
     # Explicit piecewise-linear CDF approximation, monotone-repaired quantiles.
     return float(1 - np.interp(threshold, np.maximum.accumulate(values), levels, left=0, right=1))
@@ -137,7 +167,7 @@ def taker_fee(price):
     return float((Decimal("0.07") * p * (1 - p)).quantize(Decimal("0.01"), rounding=ROUND_CEILING))
 
 
-def build_candidates(predictions, client, markets=None, max_age_seconds=300, max_spread=.10):
+def build_candidates(predictions, client, markets=None, max_age_seconds=300, max_spread=0.10):
     """Return every matched side and rejected row, including missing data reasons.
 
     Network errors stop the run (successful requests remain cached), rather than
@@ -157,7 +187,9 @@ def build_candidates(predictions, client, markets=None, max_age_seconds=300, max
             rows.append({**base, "reason": "no_matching_market"})
         for market in matches:
             ticker, threshold = market["ticker"], float(market["floor_strike"])
-            if market.get("strike_type") not in ("greater", "structured") or not re.search(r"records \d+\+ passing yards", market.get("title", ""), re.I):
+            if market.get("strike_type") not in ("greater", "structured") or not re.search(
+                r"records \d+\+ passing yards", market.get("title", ""), re.I
+            ):
                 rows.append({**base, "ticker": ticker, "reason": "unsupported_contract"})
                 continue
             p_yes = probability_over(row["quantile_levels"], row["quantile_values"], threshold)
@@ -177,16 +209,28 @@ def build_candidates(predictions, client, markets=None, max_age_seconds=300, max
                 raise ValueError(f"Invalid settlement value for {ticker}")
             for side, probability, price in [("yes", p_yes, ask), ("no", 1 - p_yes, None if bid is None else 1 - bid)]:
                 fee = taker_fee(price) if price is not None and 0 < price < 1 else None
-                rows.append({**base, **snapshot, "ticker": ticker, "threshold": threshold,
-                             "line": math.floor(threshold) + 1, "side": side,
-                             "model_probability": probability, "entry_price": price, "fee": fee,
-                             "edge": probability - price - fee if fee is not None else None,
-                             "settlement_value": None if settlement is None else (float(settlement) if side == "yes" else 1 - float(settlement)),
-                             "reason": "nontradeable_price" if reason == "eligible" and fee is None else reason})
+                rows.append(
+                    {
+                        **base,
+                        **snapshot,
+                        "ticker": ticker,
+                        "threshold": threshold,
+                        "line": math.floor(threshold) + 1,
+                        "side": side,
+                        "model_probability": probability,
+                        "entry_price": price,
+                        "fee": fee,
+                        "edge": probability - price - fee if fee is not None else None,
+                        "settlement_value": None
+                        if settlement is None
+                        else (float(settlement) if side == "yes" else 1 - float(settlement)),
+                        "reason": "nontradeable_price" if reason == "eligible" and fee is None else reason,
+                    }
+                )
     return pd.DataFrame(rows)
 
 
-def select_strategy(candidates, min_edge=.10):
+def select_strategy(candidates, min_edge=0.10):
     """Freeze Q1 first, halftime fallback; select highest edge deterministically.
 
     Settlement never influences selection. Only one one-contract position per
@@ -219,7 +263,9 @@ def select_strategy(candidates, min_edge=.10):
                 else:
                     choices.append(index)
             if choices:
-                winner = sorted(choices, key=lambda i: (-audit.at[i, "edge"], audit.at[i, "ticker"], audit.at[i, "side"]))[0]
+                winner = sorted(
+                    choices, key=lambda i: (-audit.at[i, "edge"], audit.at[i, "ticker"], audit.at[i, "side"])
+                )[0]
                 for index in choices:
                     audit.at[index, "reason"] = "selected" if index == winner else "lower_priority"
                 audit.at[winner, "selected"] = True
@@ -235,7 +281,7 @@ def select_strategy(candidates, min_edge=.10):
     return audit, selected
 
 
-def summarize(selected, allowances=(0, .05, .10)):
+def summarize(selected, allowances=(0, 0.05, 0.10)):
     """One-contract quote-based P&L, including each checkpoint and combined."""
     results = []
     for checkpoint in ["q1", "halftime", "combined"]:
@@ -245,9 +291,16 @@ def summarize(selected, allowances=(0, .05, .10)):
         for allowance in allowances:
             capital = float((rows.entry_price + rows.fee + allowance).sum()) if len(rows) else 0
             payout = float(rows.settlement_value.sum()) if len(rows) else 0
-            results.append(dict(checkpoint=checkpoint, allowance=allowance, entries=len(rows),
-                                capital=capital, profit=payout-capital,
-                                return_on_deployed=(payout-capital)/capital if capital else None))
+            results.append(
+                dict(
+                    checkpoint=checkpoint,
+                    allowance=allowance,
+                    entries=len(rows),
+                    capital=capital,
+                    profit=payout - capital,
+                    return_on_deployed=(payout - capital) / capital if capital else None,
+                )
+            )
     return pd.DataFrame(results)
 
 
@@ -271,15 +324,27 @@ def run_backtest_if_available(predictions, cache_dir, output_dir, **options):
     try:
         result = run_backtest(predictions, cache_dir, output_dir, **options)
         audit, selected, report = result
-        if not audit.reason.isin(['selected', 'below_edge', 'lower_priority', 'earlier_entry',
-                                  'probability_not_confirmed', 'missing_q1_confirmation']).any():
-            raise MarketDataUnavailable('No usable matching quotes for this prediction sample')
+        if not audit.reason.isin(
+            [
+                "selected",
+                "below_edge",
+                "lower_priority",
+                "earlier_entry",
+                "probability_not_confirmed",
+                "missing_q1_confirmation",
+            ]
+        ).any():
+            raise MarketDataUnavailable("No usable matching quotes for this prediction sample")
     except (requests.RequestException, MarketDataUnavailable) as error:
-        status = {'available': False, 'reason': str(error), 'roi': None,
-                  'note': 'Forecast outputs remain valid; no betting result is asserted.'}
-        (output_dir / 'kalshi_status.json').write_text(json.dumps(status, indent=2))
-        pd.DataFrame([status]).to_csv(output_dir / 'quote_based_results.csv', index=False)
-        print('Kalshi betting results unavailable:', error)
+        status = {
+            "available": False,
+            "reason": str(error),
+            "roi": None,
+            "note": "Forecast outputs remain valid; no betting result is asserted.",
+        }
+        (output_dir / "kalshi_status.json").write_text(json.dumps(status, indent=2))
+        pd.DataFrame([status]).to_csv(output_dir / "quote_based_results.csv", index=False)
+        print("Kalshi betting results unavailable:", error)
         return None
-    (output_dir / 'kalshi_status.json').write_text(json.dumps({'available': True}))
+    (output_dir / "kalshi_status.json").write_text(json.dumps({"available": True}))
     return result

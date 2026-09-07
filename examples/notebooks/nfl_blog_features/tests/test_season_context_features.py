@@ -80,18 +80,13 @@ def test_current_week_scores_cannot_change_current_week_features() -> None:
     )
     changed = build_season_context_features(_base_rows(), mutated_current, _teams())
 
-    assert original.select(SEASON_CONTEXT_FEATURE_COLUMNS).equals(
-        changed.select(SEASON_CONTEXT_FEATURE_COLUMNS)
-    )
+    assert original.select(SEASON_CONTEXT_FEATURE_COLUMNS).equals(changed.select(SEASON_CONTEXT_FEATURE_COLUMNS))
 
 
 def test_prior_week_scores_do_change_later_features() -> None:
     original = build_season_context_features(_base_rows(), _schedules(), _teams())
     reversed_week_one = _schedules().with_columns(
-        pl.when(pl.col("game_id") == "2025_01_A_B")
-        .then(pl.lit(0))
-        .otherwise(pl.col("away_score"))
-        .alias("away_score"),
+        pl.when(pl.col("game_id") == "2025_01_A_B").then(pl.lit(0)).otherwise(pl.col("away_score")).alias("away_score"),
         pl.when(pl.col("game_id") == "2025_01_A_B")
         .then(pl.lit(30))
         .otherwise(pl.col("home_score"))
@@ -113,9 +108,7 @@ def test_builder_preserves_source_rows_order_and_numeric_feature_contract() -> N
     assert rows.select(base.columns).equals(base)
     assert len(SEASON_CONTEXT_FEATURE_COLUMNS) == len(set(SEASON_CONTEXT_FEATURE_COLUMNS))
     assert all(rows.schema[column].is_numeric() for column in SEASON_CONTEXT_FEATURE_COLUMNS)
-    assert not {"home_score", "away_score", "official_passing_yards"}.intersection(
-        SEASON_CONTEXT_FEATURE_COLUMNS
-    )
+    assert not {"home_score", "away_score", "official_passing_yards"}.intersection(SEASON_CONTEXT_FEATURE_COLUMNS)
 
 
 def test_builder_rejects_duplicate_source_keys_and_missing_metadata() -> None:

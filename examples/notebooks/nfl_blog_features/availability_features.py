@@ -34,9 +34,7 @@ def snap_weighted_availability_feature_columns() -> list[str]:
     """Return the six recent-role-weighted injury columns."""
 
     return [
-        f"availability_{group}_{status}_snap_share"
-        for group in ("ol", "pass_catcher")
-        for status in _STATUS_BUCKETS
+        f"availability_{group}_{status}_snap_share" for group in ("ol", "pass_catcher") for status in _STATUS_BUCKETS
     ]
 
 
@@ -51,9 +49,7 @@ def _assert_unique_base_rows(base_rows: pl.DataFrame) -> None:
 def _as_utc_timestamp(frame: pl.DataFrame, column: str) -> pl.DataFrame:
     dtype = frame.schema[column]
     if dtype == pl.String:
-        return frame.with_columns(
-            pl.col(column).str.to_datetime(time_zone="UTC", strict=False).alias(column)
-        )
+        return frame.with_columns(pl.col(column).str.to_datetime(time_zone="UTC", strict=False).alias(column))
     if isinstance(dtype, pl.Datetime):
         if dtype.time_zone is None:
             return frame.with_columns(pl.col(column).dt.replace_time_zone("UTC").alias(column))
@@ -197,10 +193,7 @@ def build_availability_features(
     ).with_columns(
         (
             (pl.col("position") != "QB")
-            & (
-                pl.col("anticipated_qb_id").is_null()
-                | (pl.col("gsis_id") != pl.col("anticipated_qb_id"))
-            )
+            & (pl.col("anticipated_qb_id").is_null() | (pl.col("gsis_id") != pl.col("anticipated_qb_id")))
             & pl.col("availability_group").is_not_null()
             & pl.col("availability_status").is_not_null()
         ).alias("is_relevant_player")
@@ -225,9 +218,7 @@ def build_availability_features(
 
     features = classified.group_by(*_BASE_KEYS).agg(*aggregations)
     result = base_rows.join(features, on=list(_BASE_KEYS), how="left", validate="1:1")
-    count_columns = [
-        column for column in availability_feature_columns() if column != "availability_report_coverage"
-    ]
+    count_columns = [column for column in availability_feature_columns() if column != "availability_report_coverage"]
     return result.with_columns(
         pl.col("availability_report_coverage").fill_null(0.0),
         *[
@@ -333,15 +324,11 @@ def build_snap_weighted_availability_features(
     if team_games_frame.select("season", "week", "team").is_duplicated().any():
         raise ValueError("snap_counts contains multiple regular-season games for a team/week")
     team_games: dict[str, list[tuple[int, int, str]]] = {}
-    for season, week, game_id, team in team_games_frame.sort(
-        ["team", "season", "week", "game_id"]
-    ).iter_rows():
+    for season, week, game_id, team in team_games_frame.sort(["team", "season", "week", "game_id"]).iter_rows():
         team_games.setdefault(str(team), []).append((int(season), int(week), str(game_id)))
     snap_share = {
         (str(game_id), str(team), str(pfr_id)): float(share)
-        for game_id, team, pfr_id, share in snaps.select(
-            "game_id", "team", "pfr_player_id", "offense_pct"
-        ).iter_rows()
+        for game_id, team, pfr_id, share in snaps.select("game_id", "team", "pfr_player_id", "offense_pct").iter_rows()
     }
 
     snapshot_rows: dict[tuple[str, str], list[dict[str, object]]] = {}
@@ -393,11 +380,9 @@ def build_snap_weighted_availability_features(
 
         franchise = _franchise(str(base["team"]))
         season_week = (int(base["season"]), int(base["week"]))
-        history = [
-            game
-            for game in team_games.get(franchise, [])
-            if (game[0], game[1]) < season_week
-        ][-SNAP_HISTORY_GAMES:]
+        history = [game for game in team_games.get(franchise, []) if (game[0], game[1]) < season_week][
+            -SNAP_HISTORY_GAMES:
+        ]
         if len(history) != SNAP_HISTORY_GAMES or any(gsis_id not in crosswalk for gsis_id, _, _ in relevant):
             records.append(record)
             continue
@@ -405,10 +390,9 @@ def build_snap_weighted_availability_features(
         totals = {column: 0.0 for column in weighted_columns}
         for gsis_id, group, status in relevant:
             pfr_id = crosswalk[gsis_id]
-            weight = sum(
-                snap_share.get((game_id, franchise, pfr_id), 0.0)
-                for _, _, game_id in history
-            ) / SNAP_HISTORY_GAMES
+            weight = (
+                sum(snap_share.get((game_id, franchise, pfr_id), 0.0) for _, _, game_id in history) / SNAP_HISTORY_GAMES
+            )
             totals[f"availability_{group}_{status}_snap_share"] += weight
         record.update(totals)
         records.append(record)
@@ -427,7 +411,5 @@ def build_snap_weighted_availability_features(
             raise ValueError("existing availability_report_coverage disagrees with timestamped snapshots")
         features = features.drop("_computed_availability_report_coverage")
     else:
-        features = features.rename(
-            {"_computed_availability_report_coverage": "availability_report_coverage"}
-        )
+        features = features.rename({"_computed_availability_report_coverage": "availability_report_coverage"})
     return base_rows.join(features, on=list(_BASE_KEYS), how="left", validate="1:1")

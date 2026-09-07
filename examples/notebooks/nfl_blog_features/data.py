@@ -194,8 +194,7 @@ def normalize_schedules(
 ) -> pl.DataFrame:
     games = (
         schedules.filter(
-            (pl.col("game_type") == season_type)
-            & pl.col("season").is_between(first_eligible_season, test_season)
+            (pl.col("game_type") == season_type) & pl.col("season").is_between(first_eligible_season, test_season)
         )
         .with_columns(
             pl.concat_str(["gameday", "gametime"], separator=" ")
@@ -203,9 +202,7 @@ def normalize_schedules(
             .dt.convert_time_zone("UTC")
             .alias("kickoff_utc")
         )
-        .with_columns(
-            (pl.col("kickoff_utc") - pl.duration(minutes=cutoff_minutes)).alias("prediction_cutoff_utc")
-        )
+        .with_columns((pl.col("kickoff_utc") - pl.duration(minutes=cutoff_minutes)).alias("prediction_cutoff_utc"))
     )
 
     shared = [
@@ -281,9 +278,7 @@ def select_anticipated_starters(schedule_rows: pl.DataFrame, depth_charts: pl.Da
         pl.col("pos_rank").cast(pl.Int64),
     )
     legacy = depth_charts.filter(
-        pl.col("dt").is_null()
-        & (pl.col("position") == "QB")
-        & (pl.col("depth_team").cast(pl.String) == "1")
+        pl.col("dt").is_null() & (pl.col("position") == "QB") & (pl.col("depth_team").cast(pl.String) == "1")
     )
     legacy = _unique_starters(
         legacy,
@@ -299,9 +294,7 @@ def select_anticipated_starters(schedule_rows: pl.DataFrame, depth_charts: pl.Da
 
     current = depth_charts.filter(
         pl.col("dt").is_not_null() & (pl.col("pos_abb") == "QB") & (pl.col("pos_rank") == 1)
-    ).with_columns(
-        pl.col("dt").str.to_datetime(time_zone="UTC", strict=True).alias("starter_snapshot_utc")
-    )
+    ).with_columns(pl.col("dt").str.to_datetime(time_zone="UTC", strict=True).alias("starter_snapshot_utc"))
     current = _unique_starters(
         current,
         keys=["starter_snapshot_utc", "team"],
@@ -330,9 +323,7 @@ def select_anticipated_starters(schedule_rows: pl.DataFrame, depth_charts: pl.Da
             check_sortedness=False,
         )
     )
-    return pl.concat([legacy_rows, current_rows], how="diagonal_relaxed").sort(
-        ["kickoff_utc", "game_id", "team"]
-    )
+    return pl.concat([legacy_rows, current_rows], how="diagonal_relaxed").sort(["kickoff_utc", "game_id", "team"])
 
 
 def actual_starters_from_participation(participation: pl.DataFrame) -> pl.DataFrame:

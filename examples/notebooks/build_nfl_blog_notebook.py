@@ -4,6 +4,7 @@ Run after committing/pushing helpers: python build_nfl_blog_notebook.py --source
 Execute the resulting notebook separately to populate outputs; this generator never
 embeds saved predictions or claims execution happened.
 """
+
 import argparse
 import hashlib
 from pathlib import Path
@@ -16,16 +17,20 @@ ROOT = Path(__file__).resolve().parent
 def build(source_ref):
     if len(source_ref) != 40 or any(c not in "0123456789abcdef" for c in source_ref):
         raise ValueError("--source-ref must be the public 40-character helper commit SHA")
-    sources = [ROOT / name for name in ("nfl_blog_inference.py", "nfl_blog_strategy.py", "nfl_passing_yards_markets.py")]
+    sources = [
+        ROOT / name for name in ("nfl_blog_inference.py", "nfl_blog_strategy.py", "nfl_passing_yards_markets.py")
+    ]
     sources += sorted((ROOT / "nfl_blog_features").glob("*.py"))
     hashes = {str(p.relative_to(ROOT)): hashlib.sha256(p.read_bytes()).hexdigest() for p in sources}
     cells = []
+
     def md(s):
         cells.append(nbformat.v4.new_markdown_cell(textwrap.dedent(s).strip()))
+
     def code(s):
         cells.append(nbformat.v4.new_code_cell(textwrap.dedent(s).strip()))
 
-    md('''
+    md("""
     # NFL passing-yard predictions and Kalshi backtest with Nori
 
     Run every cell from a fresh Python 3.11 Jupyter or Colab environment. This
@@ -45,12 +50,12 @@ def build(source_ref):
     CPU works but the full run can take hours. A GPU is optional. To smoke-test,
     change WEEKS to (1,); that is a partial run, not the full-season reproduction.
     Kalshi is enabled by default; an API outage does not discard your forecasts.
-    ''')
-    md('''## 1. Install the measured package versions
+    """)
+    md("""## 1. Install the measured package versions
     Run this before importing the packages. If Jupyter already imported different
     versions, restart its kernel after installation and run again.
-    ''')
-    code('''
+    """)
+    code("""
     import sys
     import subprocess
     import importlib.metadata as metadata
@@ -72,14 +77,14 @@ def build(source_ref):
     if missing:
         subprocess.check_call([sys.executable, "-m", "pip", "install", "-q", *missing])
     print({name: metadata.version(name) for name in required})
-    ''')
-    md('''## 2. Download the public implementation
+    """)
+    md("""## 2. Download the public implementation
     The feature transformations are too long for one readable notebook cell.
     Their adjacent source files are fetched from a fixed public Git commit and
     checked against SHA-256 hashes. Downloading this notebook alone is sufficient.
     The downloads are ordinary source code, not data or precomputed forecasts.
-    ''')
-    code(f'''
+    """)
+    code(f"""
 from pathlib import Path
 import hashlib
 import json
@@ -101,8 +106,8 @@ for filename, expected_hash in SOURCE_HASHES.items():
         raise ValueError(f"Helper hash mismatch: {{destination}}; remove this file and retry")
 sys.path.insert(0, str(SOURCE_DIR.resolve()))
 print(f"Verified {{len(SOURCE_HASHES)}} public source files at {{SOURCE_REF}}")
-''')
-    code('''
+""")
+    code("""
     import numpy as np
     import pandas as pd
     import polars as pl
@@ -122,8 +127,8 @@ print(f"Verified {{len(SOURCE_HASHES)}} public source files at {{SOURCE_REF}}")
     REFRESH_SOURCE_DATA = False
     RESUME_PREDICTIONS = True  # Reuse only matching, fingerprinted local computations.
     print({"weeks": WEEKS, "device": DEVICE, "kalshi": RUN_MARKET_BACKTEST})
-    ''')
-    md('''## 3. Pull football data and build the two checkpoint tables
+    """)
+    md("""## 3. Pull football data and build the two checkpoint tables
     nflreadpy downloads schedules, player statistics, depth charts, participation,
     play-by-play, and team metadata. Full-game rolling form uses 2016–2017 as
     warmup. Model context starts in 2018 and expands only with earlier weeks.
@@ -136,8 +141,8 @@ print(f"Verified {{len(SOURCE_HASHES)}} public source files at {{SOURCE_REF}}")
     Q1 uses the earliest timestamped Q2 record as its boundary, excluding that
     record. Halftime uses the last Q2 record. The decision is two minutes later.
     Finalized play data may include corrections and do not prove feed arrival time.
-    ''')
-    code('''
+    """)
+    code("""
     features = build_blog_features(CACHE_DIR, OUTPUT_DIR, refresh=REFRESH_SOURCE_DATA)
     overview = pd.DataFrame([
         {"checkpoint": h, "rows": table.height,
@@ -146,8 +151,8 @@ print(f"Verified {{len(SOURCE_HASHES)}} public source files at {{SOURCE_REF}}")
         for h, table in features.items()
     ])
     display(overview)
-    ''')
-    code('''
+    """)
+    code("""
     example_columns = ["game_id", "week", "actual_qb_name", "live_decision_utc",
                        "live_qb_passing_yards", "live_qb_attempts", "official_passing_yards"]
     history_columns = [c for c in blog_feature_columns() if c.startswith("checkpoint_history_")][:3]
@@ -155,8 +160,8 @@ print(f"Verified {{len(SOURCE_HASHES)}} public source files at {{SOURCE_REF}}")
             .select(example_columns + history_columns).head(8).to_pandas())
     print("All candidate feature names:")
     print("\\n".join(blog_feature_columns()))
-    ''')
-    md('''## 4. Run Nori—fresh predictions, week by week
+    """)
+    md("""## 4. Run Nori—fresh predictions, week by week
     For each week and checkpoint, rank candidate features using correlations
     computed on past context only. Drop a feature when its absolute correlation
     with an already-kept feature exceeds 0.75. Use the entire retained context:
@@ -169,37 +174,37 @@ print(f"Verified {{len(SOURCE_HASHES)}} public source files at {{SOURCE_REF}}")
     On a rerun, RESUME_PREDICTIONS checks local provenance fingerprints before
     reusing a completed week. Changed inputs, selected features, model, runtime,
     or device trigger fresh inference. Set it to False to recompute every week.
-    ''')
-    code('''
+    """)
+    code("""
     predictions = run_blog_predictions(
         features["q1"], features["halftime"], OUTPUT_DIR,
         weeks=WEEKS, device=DEVICE, season=2025, resume=RESUME_PREDICTIONS,
     )
-    ''')
-    md('''## 5. Measure forecast error and coverage
+    """)
+    md("""## 5. Measure forecast error and coverage
     MAE and RMSE below use the predictive median. Pinball loss measures quantile
     accuracy; P10–P90 coverage is the fraction of final totals inside the predicted
     middle 80%. These are forecast metrics, not betting returns.
-    ''')
-    code('''
+    """)
+    code("""
     metrics = {h: prediction_metrics(frame) for h, frame in predictions.items()}
     display(pd.DataFrame(metrics).T.drop(columns=["pinball_loss"]))
     display(pd.DataFrame({h: values["pinball_loss"] for h, values in metrics.items()}).rename_axis("quantile"))
     (OUTPUT_DIR / "forecast_metrics.json").write_text(json.dumps(metrics, indent=2))
-    ''')
-    code('''
+    """)
+    code("""
     display(predictions["q1"].select(
         "week", "actual_qb_name", "live_qb_passing_yards", "nori_p10",
         "nori_median", "nori_p90", "official_passing_yards", "context_rows", "selected_feature_count"
     ).head(12).to_pandas())
-    ''')
-    md('''## 6. See the distribution in 5-yard bins
+    """)
+    md("""## 6. See the distribution in 5-yard bins
     Prefer the blog's Burrow example when that week is included; otherwise use the
     first predicted row. This plot is computed from this run's quantiles. Values
     are not copied from the blog. Bar heights approximate probability mass by
     interpolating the predictive CDF at half-yard bin boundaries.
-    ''')
-    code('''
+    """)
+    code("""
     example = predictions["q1"].filter(
         (pl.col("game_id") == "2025_13_CIN_BAL") & (pl.col("actual_qb_name") == "Joe Burrow")
     )
@@ -222,8 +227,8 @@ print(f"Verified {{len(SOURCE_HASHES)}} public source files at {{SOURCE_REF}}")
     ax.legend()
     plt.show()
     fig.savefig(OUTPUT_DIR / "passing_yards_distribution.png", bbox_inches="tight")
-    ''')
-    md('''## 7. Replay the original Kalshi rule
+    """)
+    md("""## 7. Replay the original Kalshi rule
     After Q1, select the quoted line whose midpoint is closest to 50¢, then its
     higher-edge side. Buy only if probability × $1 − price − fee is at least 10¢.
     If Q1 does not buy, select the maximum-edge halftime candidate. Its edge must
@@ -238,8 +243,8 @@ print(f"Verified {{len(SOURCE_HASHES)}} public source files at {{SOURCE_REF}}")
 
     Missing API responses stop only the market stage. They never become invented
     quotes, inferred fills, or a profitable result on an incomplete download.
-    ''')
-    code('''
+    """)
+    code("""
     if RUN_MARKET_BACKTEST:
         decisions, market_report = run_kalshi_backtest(
             predictions["q1"], predictions["halftime"], CACHE_DIR,
@@ -250,8 +255,8 @@ print(f"Verified {{len(SOURCE_HASHES)}} public source files at {{SOURCE_REF}}")
         market_report = {"status": "disabled", "roi": None}
     print(json.dumps(market_report, indent=2))
     (OUTPUT_DIR / "kalshi_status.json").write_text(json.dumps(market_report, indent=2))
-    ''')
-    code('''
+    """)
+    code("""
     if market_report["status"] == "quote_based_simulation":
         decisions.write_parquet(OUTPUT_DIR / "kalshi_decisions.parquet")
         trades = decisions.filter(pl.col("bet_taken"))
@@ -265,15 +270,15 @@ print(f"Verified {{len(SOURCE_HASHES)}} public source files at {{SOURCE_REF}}")
         display(sensitivities[["execution_cost", "bets", "capital", "pnl", "roi"]])
     else:
         print("Forecasts are saved. No betting return is reported without available market data.")
-    ''')
-    md('''## 8. Keep the provenance with the results
+    """)
+    md("""## 8. Keep the provenance with the results
     Feature input hashes, pinned model identity, per-week feature selections,
     forecast metrics, and the market status are saved beside predictions. The
     original strategy was refined on 2025: this is an exploratory reproduction,
     not an untouched test or a guarantee of future returns. Public source revisions
     and runtime differences can change numbers even with the same algorithm.
-    ''')
-    code('''
+    """)
+    code("""
     run_manifest = {
         "source_ref": SOURCE_REF, "source_hashes": SOURCE_HASHES,
         "package_versions": {p: metadata.version(p) for p in required},
@@ -287,13 +292,21 @@ print(f"Verified {{len(SOURCE_HASHES)}} public source files at {{SOURCE_REF}}")
     display(pd.DataFrame([{"file": p.name, "bytes": p.stat().st_size}
                           for p in sorted(OUTPUT_DIR.iterdir()) if p.is_file()]))
     print(f"Outputs: {OUTPUT_DIR.resolve()}")
-    ''')
-    nb = nbformat.v4.new_notebook(cells=cells, metadata={"kernelspec": {"display_name": "Python 3", "language": "python", "name": "python3"}, "language_info": {"name": "python", "version": "3.11.0"}})
+    """)
+    nb = nbformat.v4.new_notebook(
+        cells=cells,
+        metadata={
+            "kernelspec": {"display_name": "Python 3", "language": "python", "name": "python3"},
+            "language_info": {"name": "python", "version": "3.11.0"},
+        },
+    )
     for i, cell in enumerate(nb.cells):
         cell.id = f"nfl-blog-{i:02d}"
     nbformat.validate(nb)
     nbformat.write(nb, ROOT / "nori-nfl-passing-yards.ipynb")
-    print(f"Generated {len(cells)} cells, {sum(c.cell_type == 'code' for c in cells)} code cells; no outputs fabricated")
+    print(
+        f"Generated {len(cells)} cells, {sum(c.cell_type == 'code' for c in cells)} code cells; no outputs fabricated"
+    )
 
 
 if __name__ == "__main__":

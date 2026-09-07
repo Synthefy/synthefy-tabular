@@ -1,4 +1,5 @@
 """Unchanged prior-checkpoint history math from the original experiment."""
+
 from __future__ import annotations
 import numpy as np
 import polars as pl

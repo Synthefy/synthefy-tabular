@@ -1,4 +1,5 @@
 """Rebuild original blog inputs from public nflverse data, without saved predictions."""
+
 from __future__ import annotations
 import hashlib
 import json
@@ -19,22 +20,48 @@ from .checkpoint_history import add_checkpoint_history, WINDOWS, SOURCES
 
 def blog_configs(cache_dir: Path, output_dir: Path):
     cache_dir, output_dir = Path(cache_dir), Path(output_dir)
-    data = DataConfig(2016, 2018, 2024, 2025, "REG", 60, cache_dir,
-        output_dir / "base.parquet", output_dir / "pregame.parquet",
-        (3, 8), (3, 8), 0.2, 0.8, 3, True, (3, 8))
-    live = LiveConfig(2, 2, 5, "qb_offense_defense_context_season",
-        cache_dir / "pbp_live_2018_2025.parquet", output_dir / "halftime.parquet",
-        cache_dir / "kalshi", output_dir / "validation.parquet",
-        output_dir / "validation.json", output_dir / "test.parquet", output_dir / "test.json")
+    data = DataConfig(
+        2016,
+        2018,
+        2024,
+        2025,
+        "REG",
+        60,
+        cache_dir,
+        output_dir / "base.parquet",
+        output_dir / "pregame.parquet",
+        (3, 8),
+        (3, 8),
+        0.2,
+        0.8,
+        3,
+        True,
+        (3, 8),
+    )
+    live = LiveConfig(
+        2,
+        2,
+        5,
+        "qb_offense_defense_context_season",
+        cache_dir / "pbp_live_2018_2025.parquet",
+        output_dir / "halftime.parquet",
+        cache_dir / "kalshi",
+        output_dir / "validation.parquet",
+        output_dir / "validation.json",
+        output_dir / "test.parquet",
+        output_dir / "test.json",
+    )
     return data, live
 
 
 def blog_feature_columns():
     """Exact ordered numeric candidates before training-only correlation pruning."""
     data, live = blog_configs(Path("cache"), Path("outputs"))
-    return live_feature_columns(data, live, "usage") + [
-        f"checkpoint_history_{source}_mean_last{window}" for window in WINDOWS for source in SOURCES
-    ] + ["checkpoint_history_games_last8"]
+    return (
+        live_feature_columns(data, live, "usage")
+        + [f"checkpoint_history_{source}_mean_last{window}" for window in WINDOWS for source in SOURCES]
+        + ["checkpoint_history_games_last8"]
+    )
 
 
 def build_blog_features(cache_dir, output_dir, refresh=False):
@@ -49,15 +76,26 @@ def build_blog_features(cache_dir, output_dir, refresh=False):
     Path(output_dir).mkdir(parents=True, exist_ok=True)
     tables = load_nflverse_tables(data, refresh=refresh)
     print("Building QB form, offense, defense, and context.", flush=True)
-    rows = build_base_qb_game_table(schedules=tables["schedules"], depth_charts=tables["depth_charts"],
-        participation=tables["participation"], pbp_starter_plays=tables["pbp_starter_plays"],
-        player_stats=tables["player_stats"], config=data)
+    rows = build_base_qb_game_table(
+        schedules=tables["schedules"],
+        depth_charts=tables["depth_charts"],
+        participation=tables["participation"],
+        pbp_starter_plays=tables["pbp_starter_plays"],
+        player_stats=tables["player_stats"],
+        config=data,
+    )
     # The actual starter is observable in-game; recompute that player's past form.
-    rows = build_qb_rolling_features(rows, tables["player_stats"], tables["schedules"], data,
-        qb_id_column="actual_qb_id")
+    rows = build_qb_rolling_features(
+        rows, tables["player_stats"], tables["schedules"], data, qb_id_column="actual_qb_id"
+    )
     rows = build_offense_rolling_features(rows, tables["pbp_offense_plays"], tables["schedules"], data)
-    rows = build_defense_features(rows, tables["pbp_defense_plays"], tables["schedules"],
-        season_type=data.season_type, windows=data.defense_rolling_windows)
+    rows = build_defense_features(
+        rows,
+        tables["pbp_defense_plays"],
+        tables["schedules"],
+        season_type=data.season_type,
+        windows=data.defense_rolling_windows,
+    )
     rows = build_context_features(rows, tables["schedules"])
     pbp = load_live_pbp(data, live, refresh=refresh)
     halftime = build_live_rows(rows, pbp, data, live)

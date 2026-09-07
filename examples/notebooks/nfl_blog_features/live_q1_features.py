@@ -21,15 +21,14 @@ from .live_features import (
     load_live_config,
 )
 
+
 def _normalized_timestamped_plays(pbp: pl.DataFrame, season_type: str) -> pl.DataFrame:
     missing = sorted(set(LIVE_PBP_COLUMNS).difference(pbp.columns))
     if missing:
         raise ValueError(f"Q1 PBP is missing required columns: {missing}")
     return (
         pbp.filter(
-            (pl.col("season_type") == season_type)
-            & pl.col("qtr").is_in([1, 2])
-            & pl.col("time_of_day").is_not_null()
+            (pl.col("season_type") == season_type) & pl.col("qtr").is_in([1, 2]) & pl.col("time_of_day").is_not_null()
         )
         .with_columns(
             pl.col("qtr").cast(pl.Int32),
@@ -106,10 +105,12 @@ def _q1_usage_aggregates(plays: pl.DataFrame) -> pl.DataFrame:
             (pl.col("passer_player_id") == pl.col("_latest_passer_id"))
             .cast(pl.Float64)
             .alias("live_qb_is_latest_team_passer"),
-            (pl.col("live_qb_anchor_quarter_pass_plays") / pl.col("_team_q1_pass_plays"))
-            .alias("live_qb_anchor_quarter_pass_play_share"),
-            (pl.col("_qb_recent_pass_plays").fill_null(0) / pl.col("_team_recent_pass_plays"))
-            .alias("live_qb_recent_pass_play_share"),
+            (pl.col("live_qb_anchor_quarter_pass_plays") / pl.col("_team_q1_pass_plays")).alias(
+                "live_qb_anchor_quarter_pass_play_share"
+            ),
+            (pl.col("_qb_recent_pass_plays").fill_null(0) / pl.col("_team_recent_pass_plays")).alias(
+                "live_qb_recent_pass_play_share"
+            ),
             (pl.col("live_anchor_utc") - pl.col("_qb_last_pass_play_utc"))
             .dt.total_seconds()
             .cast(pl.Float64)
@@ -159,8 +160,7 @@ def build_q1_rows(
     if missing_q1.height:
         raise ValueError(f"Q1 boundary has no preceding timestamped Q1 record: {missing_q1.head(5).to_dicts()}")
     invalid_passer_time = q1.filter(
-        pl.col("passer_player_id").is_not_null()
-        & (pl.col("_play_timestamp_utc") >= pl.col("live_anchor_utc"))
+        pl.col("passer_player_id").is_not_null() & (pl.col("_play_timestamp_utc") >= pl.col("live_anchor_utc"))
     )
     if invalid_passer_time.height:
         examples = invalid_passer_time.select("game_id", "play_id").head(5).to_dicts()
@@ -200,8 +200,9 @@ def build_q1_rows(
         )
         .with_columns(
             (pl.col("live_score_differential") > 0).cast(pl.Float64).alias("live_is_leading"),
-            (pl.col("official_passing_yards") - pl.col("live_qb_passing_yards").fill_null(0.0))
-            .alias(LIVE_TARGET_COLUMN),
+            (pl.col("official_passing_yards") - pl.col("live_qb_passing_yards").fill_null(0.0)).alias(
+                LIVE_TARGET_COLUMN
+            ),
             pl.col("live_anchor_utc").is_not_null().alias("live_evaluation_eligible"),
         )
         .drop("_live_home_score", "_live_away_score")

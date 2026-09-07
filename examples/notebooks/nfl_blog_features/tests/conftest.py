@@ -1,4 +1,5 @@
 """Make the notebook-local helper package importable during repository tests."""
+
 import sys
 from pathlib import Path
 

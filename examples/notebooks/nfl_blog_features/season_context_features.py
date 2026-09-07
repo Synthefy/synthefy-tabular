@@ -112,10 +112,7 @@ def _standings_snapshots(schedules: pl.DataFrame, teams: pl.DataFrame, seasons: 
     metadata_rows = teams.select("team_abbr", "team_conf", "team_division").unique().to_dicts()
     if len(metadata_rows) != teams.get_column("team_abbr").n_unique():
         raise ValueError("teams metadata maps one abbreviation to multiple conference/division rows")
-    metadata = {
-        str(row["team_abbr"]): (str(row["team_conf"]), str(row["team_division"]))
-        for row in metadata_rows
-    }
+    metadata = {str(row["team_abbr"]): (str(row["team_conf"]), str(row["team_division"])) for row in metadata_rows}
 
     regular = schedules.filter(
         (pl.col("game_type") == "REG") & pl.col("season").is_in([int(season) for season in seasons])
@@ -251,33 +248,31 @@ def build_season_context_features(
         pl.col("season").cast(pl.Int64).alias("_season_context_season"),
         pl.col("week").cast(pl.Int64).alias("_season_context_week"),
     )
-    team_snapshot = snapshots.rename(
-        {column: f"_season_context_team_{column}" for column in _SNAPSHOT_FIELDS}
-    ).rename({"standing_team": "_season_context_team"})
+    team_snapshot = snapshots.rename({column: f"_season_context_team_{column}" for column in _SNAPSHOT_FIELDS}).rename(
+        {"standing_team": "_season_context_team"}
+    )
     opponent_snapshot = snapshots.rename(
         {column: f"_season_context_opponent_{column}" for column in _SNAPSHOT_FIELDS}
     ).rename({"standing_team": "_season_context_opponent"})
-    rows = (
-        working.join(
-            team_snapshot,
-            left_on=["_season_context_season", "_season_context_week", "team"],
-            right_on=["season", "week", "_season_context_team"],
-            how="left",
-            validate="m:1",
-            maintain_order="left",
-        )
-        .join(
-            opponent_snapshot,
-            left_on=["_season_context_season", "_season_context_week", "opponent_team"],
-            right_on=["season", "week", "_season_context_opponent"],
-            how="left",
-            validate="m:1",
-            maintain_order="left",
-        )
+    rows = working.join(
+        team_snapshot,
+        left_on=["_season_context_season", "_season_context_week", "team"],
+        right_on=["season", "week", "_season_context_team"],
+        how="left",
+        validate="m:1",
+        maintain_order="left",
+    ).join(
+        opponent_snapshot,
+        left_on=["_season_context_season", "_season_context_week", "opponent_team"],
+        right_on=["season", "week", "_season_context_opponent"],
+        how="left",
+        validate="m:1",
+        maintain_order="left",
     )
-    if rows.get_column("_season_context_team_games_played").null_count() or rows.get_column(
-        "_season_context_opponent_games_played"
-    ).null_count():
+    if (
+        rows.get_column("_season_context_team_games_played").null_count()
+        or rows.get_column("_season_context_opponent_games_played").null_count()
+    ):
         raise ValueError("base rows contain season/week/team values absent from standings snapshots")
 
     regular_week_denominator = (
@@ -295,16 +290,11 @@ def build_season_context_features(
             "season_context_win_pct_delta"
         ),
         pl.col("_season_context_team_point_diff_per_game").alias("season_context_team_point_diff_per_game"),
-        pl.col("_season_context_opponent_point_diff_per_game").alias(
-            "season_context_opponent_point_diff_per_game"
-        ),
+        pl.col("_season_context_opponent_point_diff_per_game").alias("season_context_opponent_point_diff_per_game"),
         (
-            pl.col("_season_context_team_point_diff_per_game")
-            - pl.col("_season_context_opponent_point_diff_per_game")
+            pl.col("_season_context_team_point_diff_per_game") - pl.col("_season_context_opponent_point_diff_per_game")
         ).alias("season_context_point_diff_per_game_delta"),
-        pl.col("_season_context_team_conference_rank_fraction").alias(
-            "season_context_team_conference_rank_fraction"
-        ),
+        pl.col("_season_context_team_conference_rank_fraction").alias("season_context_team_conference_rank_fraction"),
         pl.col("_season_context_opponent_conference_rank_fraction").alias(
             "season_context_opponent_conference_rank_fraction"
         ),
@@ -312,9 +302,7 @@ def build_season_context_features(
             pl.col("_season_context_team_conference_rank_fraction")
             - pl.col("_season_context_opponent_conference_rank_fraction")
         ).alias("season_context_conference_rank_fraction_delta"),
-        pl.col("_season_context_team_division_rank_fraction").alias(
-            "season_context_team_division_rank_fraction"
-        ),
+        pl.col("_season_context_team_division_rank_fraction").alias("season_context_team_division_rank_fraction"),
         pl.col("_season_context_opponent_division_rank_fraction").alias(
             "season_context_opponent_division_rank_fraction"
         ),
@@ -322,15 +310,9 @@ def build_season_context_features(
             pl.col("_season_context_team_division_rank_fraction")
             - pl.col("_season_context_opponent_division_rank_fraction")
         ).alias("season_context_division_rank_fraction_delta"),
-        pl.col("_season_context_team_gap_to_conference_7th").alias(
-            "season_context_team_gap_to_conference_7th"
-        ),
-        pl.col("_season_context_opponent_gap_to_conference_7th").alias(
-            "season_context_opponent_gap_to_conference_7th"
-        ),
-        pl.col("_season_context_team_gap_to_division_leader").alias(
-            "season_context_team_gap_to_division_leader"
-        ),
+        pl.col("_season_context_team_gap_to_conference_7th").alias("season_context_team_gap_to_conference_7th"),
+        pl.col("_season_context_opponent_gap_to_conference_7th").alias("season_context_opponent_gap_to_conference_7th"),
+        pl.col("_season_context_team_gap_to_division_leader").alias("season_context_team_gap_to_division_leader"),
         pl.col("_season_context_opponent_gap_to_division_leader").alias(
             "season_context_opponent_gap_to_division_leader"
         ),
