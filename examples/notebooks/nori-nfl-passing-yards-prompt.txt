@@ -1,0 +1,15 @@
+Help me build an NFL quarterback passing-yard forecasting notebook using Nori-6M and Python.
+
+Use the attached nori-nfl-passing-yards.ipynb as the reference. Its portable section replays saved selections; its research section requires additional cached data. Do not claim the portable replay reruns Nori or rebuilds the full experiment.
+
+Install synthefy-nori and use synthefy_nori.NoriRegressor(model="nori-6m"). Use free nflverse data via nflreadpy for football statistics. Obtain separately timestamped Q1/halftime game state and Kalshi market quotes; nflverse does not supply historical player-prop prices. Cache source responses with timestamps and hashes. Flag unavailable data rather than fabricating it.
+
+Predict remaining passing yards after Q1 and at halftime, then add yards already thrown to obtain final-yard quantiles. Build QB form, prior Q1/halftime averages over three and eight games, offense, defense, score differential, time remaining, and context features. Fit any categorical encoding or correlated-feature pruning using prior context only. Never include current-game final outcomes in inputs. Use earlier weeks for context, not shuffled splits.
+
+Use output_type="full" for Nori quantiles and taus. Convert the distribution to P(final yards >= line), respecting each contract's settlement threshold and YES/NO side. Check interpolation at repeated quantiles and boundaries. Assess MAE, RMSE, pinball loss, and empirical P10–P90 coverage.
+
+Implement this strategy: check Q1 first; buy one contract only when probability times the $1 payout minus price and fee is at least 10 cents. Otherwise consider halftime and require probability >= the Q1 probability for the same line and side. At most one entry per QB-game. Keep the original market-selection policies explicit; the simple rule alone is not a complete reproduction. Record every candidate and rejection reason, decision time, quote time, bid/ask, side, threshold, probability, fee, stake, and final P&L.
+
+Separate quote-based simulation from execution evidence. Report configurable 0/5/10-cent allowances, fees, money deployed, P&L, and ROI. Missing historical depth means execution unknown. Do not call a later trade proof that our order could fill. Keep 2025 labeled exploratory; freeze changes before evaluating new data. Never place real orders.
+
+Before coding, confirm whether I want saved-result replay or a fresh model/data pipeline, available data access, evaluation seasons, model checkpoint, and compute budget. Explain each stage in plain language and show a small sample table.
