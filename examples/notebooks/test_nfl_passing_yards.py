@@ -2,7 +2,7 @@
 import numpy as np
 import pandas as pd
 from nfl_passing_yards_pipeline import LIVE, add_history, feature_columns
-from nfl_passing_yards_markets import probability_over, select_strategy, summarize, taker_fee
+from nfl_passing_yards_markets import PublicKalshi, probability_over, select_strategy, summarize, taker_fee
 
 
 def test_history_excludes_same_week_and_unfinished_games():
@@ -49,3 +49,16 @@ def test_halftime_requires_matching_probability_confirmation():
 def test_probability_and_fee():
     assert probability_over([.1,.5,.9],[100,200,300],200)==.5
     assert taker_fee(.21)==.02
+
+
+def test_quote_dollar_strings_and_future_candle_exclusion():
+    class FixtureClient(PublicKalshi):
+        def __init__(self):
+            pass
+        def get(self, *args, **kwargs):
+            return {'candlesticks': [
+                {'end_period_ts': 1000, 'yes_bid': {'close':'0.1200'}, 'yes_ask': {'close':'0.2100'}},
+                {'end_period_ts': 1060, 'yes_bid': {'close':'0.8000'}, 'yes_ask': {'close':'0.9000'}}]}
+    quote = FixtureClient().quote_at('contract', pd.Timestamp(1012, unit='s', tz='UTC'))
+    assert quote['yes_bid']==.12 and quote['yes_ask']==.21
+    assert quote['quote_age_seconds']==12
