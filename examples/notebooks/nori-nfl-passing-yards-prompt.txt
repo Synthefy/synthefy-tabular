@@ -1,11 +1,45 @@
-Help me adapt the attached public-source NFL passing-yard notebook with Nori-6M.
+Reproduce and help me adapt the attached public NFL passing-yard notebook with Nori.
 
-Run the notebook from an empty cache: download nflverse play-by-play and official player statistics with nflreadpy, construct Q1/halftime features, download the public Nori checkpoint, generate fresh weekly predictions, and download historical Kalshi markets and minute quotes. Never substitute saved predictions for inference. No internal repository, private checkpoint, or saved research table should be required.
+First run its cells from a fresh cache. Download public nflverse data with nflreadpy
+and the hash-checked public helper files and Nori checkpoint. Rebuild the original
+blog feature transformations, then run fresh Q1 and halftime predictions for all
+18 weeks of 2025. Do not replace inference with downloaded research predictions, a private table,
+a context-capped baseline, or a different feature set. Execute the notebook and
+save real cell outputs so the tables and histogram render on GitHub. On later
+runs, resume only locally computed predictions with matching provenance hashes;
+changed inputs/model/settings/runtime/device require fresh inference.
 
-Build earlier-week QB form and matching-checkpoint history, offense and defense summaries, player/team/opponent categorical inputs encoded on past context only, and current-game usage and score. Predict remaining yards and add yards already thrown. Report MAE, RMSE, pinball loss and P10–P90 coverage separately from betting results.
+Use the 140 original numeric candidates: QB form, offense, defense, context,
+current-game state and matching Q1/halftime historical means. Identity groups each
+QB's history; the original selected model does not encode QB ID categorically or
+use weather. Context starts in 2018, with 2016–2017 warmup for full-game form.
+At every week, prune features using past-context correlations only (absolute
+pairwise correlation >0.75), keep all context rows, predict remaining passing
+yards and add the yards already observed to each quantile. Score MAE, RMSE,
+pinball loss and empirical P10–P90 coverage.
 
-Check Q1 first, then halftime only if no Q1 entry. At halftime require probability for the same side and line to be at least its Q1 value. Select one contract per QB-game and hold to final settlement. Make edge threshold, quote age, spread filter, context size, evaluation season and execution-cost allowances configurable. Record candidates, rejection reasons, prices, fees, probabilities and P&L. Never place real orders.
+Use archived public Kalshi markets and minute-close bid/ask quotes. At Q1 choose
+the strike with quoted midpoint closest to 50 cents, then its better-edge side.
+If it qualifies at edge >=10 cents, buy one contract and stop for that QB-game.
+Otherwise at halftime choose the maximum-edge candidate; require edge >=10 cents
+and its probability for the same side/line to be at least the Q1 probability.
+Use the original anchor/decision timestamps, freshness and spread checks, rounded
+fees and a configurable additional execution allowance (default 5 cents).
+Record each selected quote, side, line, probability, cost, settlement and P&L.
+Never place real orders or call quotes guaranteed fills.
 
-Freeze the configuration before evaluation. The portable pipeline is a new baseline, not an exact reproduction of the blog's 24.1% result. Do not tune on 2025 and call it an untouched test. Historical play timestamps are not publication timestamps; historical quotes do not establish available size or guaranteed fills. Missing data must be reported, never invented.
+If Kalshi is unavailable, preserve fresh predictions, report unavailable with
+null ROI and finish the remaining forecast cells. Do not manufacture quotes,
+quietly ignore failed downloads or present a partial subset as a full backtest.
+Programming/data-contract errors must remain visible. Cache raw responses and
+record source hashes, package versions, weights and selected feature columns.
 
-Before changing the notebook, confirm the features and strategy I want to test and my compute budget. Explain each stage in plain language and show sample data rows. Cache sources and record package versions, model identity, configuration and hashes.
+Treat matching the blog result as a measured comparison, not a promised number.
+Public nflverse revisions—including a changed 2020 source—can affect context and
+predictions even with the original algorithm. Explain any mismatch using hashes
+and intermediate tables. The 2025 strategy was refined on that year's outcomes;
+do not call it an untouched validation or guaranteed future return.
+
+Before modifying features or strategy, describe the proposed change and confirm
+my compute budget. Keep the original run separate from new ablations. Show sample
+rows, a 5-yard predictive histogram and actual measured metrics, not merely code.
