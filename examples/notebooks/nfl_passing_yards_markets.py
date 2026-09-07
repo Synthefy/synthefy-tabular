@@ -23,6 +23,10 @@ from urllib3.util.retry import Retry
 BASE_URL = "https://external-api.kalshi.com/trade-api/v2"
 
 
+class MarketDataUnavailable(RuntimeError):
+    """Historical data cannot support a complete betting report."""
+
+
 class PublicKalshi:
     """Unauthenticated GET-only client; immutable request-keyed provenance cache."""
 
@@ -237,7 +241,7 @@ def summarize(selected, allowances=(0, .05, .10)):
     for checkpoint in ["q1", "halftime", "combined"]:
         rows = selected if checkpoint == "combined" else selected[selected.checkpoint == checkpoint]
         if len(rows) and rows.settlement_value.isna().any():
-            raise ValueError("Selected markets are unsettled: cannot report complete P&L")
+            raise MarketDataUnavailable("Selected markets are unsettled: cannot report complete P&L")
         for allowance in allowances:
             capital = float((rows.entry_price + rows.fee + allowance).sum()) if len(rows) else 0
             payout = float(rows.settlement_value.sum()) if len(rows) else 0
@@ -258,3 +262,24 @@ def run_backtest(predictions, cache_dir, output_dir, **selection_options):
     selected.to_csv(output_dir / "selected_entries.csv", index=False)
     report.to_csv(output_dir / "quote_based_results.csv", index=False)
     return audit, selected, report
+
+
+def run_backtest_if_available(predictions, cache_dir, output_dir, **options):
+    """Keep forecast outputs on API failure. Programming/cache errors still raise."""
+    output_dir = Path(output_dir)
+    output_dir.mkdir(parents=True, exist_ok=True)
+    try:
+        result = run_backtest(predictions, cache_dir, output_dir, **options)
+        audit, selected, report = result
+        if not audit.reason.isin(['selected', 'below_edge', 'lower_priority', 'earlier_entry',
+                                  'probability_not_confirmed', 'missing_q1_confirmation']).any():
+            raise MarketDataUnavailable('No usable matching quotes for this prediction sample')
+    except (requests.RequestException, MarketDataUnavailable) as error:
+        status = {'available': False, 'reason': str(error), 'roi': None,
+                  'note': 'Forecast outputs remain valid; no betting result is asserted.'}
+        (output_dir / 'kalshi_status.json').write_text(json.dumps(status, indent=2))
+        pd.DataFrame([status]).to_csv(output_dir / 'quote_based_results.csv', index=False)
+        print('Kalshi betting results unavailable:', error)
+        return None
+    (output_dir / 'kalshi_status.json').write_text(json.dumps({'available': True}))
+    return result

@@ -1,3 +1,7 @@
+import json
+import pytest
+import requests
+import nfl_passing_yards_markets as markets
 """Offline correctness checks for the public NFL notebook helpers."""
 import numpy as np
 import pandas as pd
@@ -62,3 +66,23 @@ def test_quote_dollar_strings_and_future_candle_exclusion():
     quote = FixtureClient().quote_at('contract', pd.Timestamp(1012, unit='s', tz='UTC'))
     assert quote['yes_bid']==.12 and quote['yes_ask']==.21
     assert quote['quote_age_seconds']==12
+
+
+def test_unavailable_kalshi_preserves_forecasts(tmp_path, monkeypatch):
+    forecast = tmp_path / 'predictions.parquet'
+    forecast.write_bytes(b'preserve me')
+    def fail(*args, **kwargs):
+        raise requests.HTTPError('503 unavailable')
+    monkeypatch.setattr(markets, 'run_backtest', fail)
+    assert markets.run_backtest_if_available(None, tmp_path, tmp_path) is None
+    status = json.loads((tmp_path / 'kalshi_status.json').read_text())
+    assert status['available'] is False and status['roi'] is None
+    assert forecast.read_bytes() == b'preserve me'
+
+
+def test_programming_errors_are_not_hidden(tmp_path, monkeypatch):
+    def fail(*args, **kwargs):
+        raise KeyError('bad schema')
+    monkeypatch.setattr(markets, 'run_backtest', fail)
+    with pytest.raises(KeyError):
+        markets.run_backtest_if_available(None, tmp_path, tmp_path)
