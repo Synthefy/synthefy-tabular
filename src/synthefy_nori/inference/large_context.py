@@ -29,6 +29,7 @@ Opt in, and read :attr:`NoriRegressor.large_context_report_` to see what actuall
 from __future__ import annotations
 
 import warnings
+from functools import partial
 from typing import Callable, Optional
 
 import numpy as np
@@ -246,6 +247,13 @@ def _report(name: str, problem: Problem, window: int, *, full_context: bool, reu
     }
 
 
+def _predictor_call(predictor, X_context, y_context, X_query) -> np.ndarray:
+    out = predictor.predict(X_context, y_context, X_query)
+    if hasattr(out, "detach"):  # a torch tensor: np.asarray() would raise on CUDA
+        out = out.detach().cpu().numpy()
+    return np.asarray(out, dtype=np.float64).reshape(-1)
+
+
 def predictor_call_fn(predictor) -> Callable[..., np.ndarray]:
     """Adapt a predictor into the one primitive a policy calls.
 
@@ -254,17 +262,10 @@ def predictor_call_fn(predictor) -> Callable[..., np.ndarray]:
     device. Bridging the two is this module's job — it is what makes ``policies.py``
     numpy-only and testable without a checkpoint.
 
-    Kept as a closure over the predictor alone (not the surrounding predict call) so a
-    long-lived :class:`Problem` holding this does not pin a query block alive.
+    Bind only the predictor so a long-lived :class:`Problem` does not pin a query
+    block alive. A module-level callable also keeps fitted estimators pickleable.
     """
-
-    def one_call(X_context, y_context, X_query) -> np.ndarray:
-        out = predictor.predict(X_context, y_context, X_query)
-        if hasattr(out, "detach"):  # a torch tensor: np.asarray() would raise on CUDA
-            out = out.detach().cpu().numpy()
-        return np.asarray(out, dtype=np.float64).reshape(-1)
-
-    return one_call
+    return partial(_predictor_call, predictor)
 
 
 __all__ = [
