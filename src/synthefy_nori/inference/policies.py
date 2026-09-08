@@ -206,10 +206,13 @@ class SharedTrainState(dict):
       hit on an entry a microsecond old.
     """
 
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-        self.hits = 0
-        self._derived_this_call: set = set()
+    def __new__(cls, *args, **kwargs):
+        # Unpickling inserts dict entries before restoring attributes and skips
+        # __init__, so __setitem__ needs its accounting state at allocation time.
+        state = super().__new__(cls)
+        state.hits = 0
+        state._derived_this_call = set()
+        return state
 
     def begin_call(self) -> None:
         """Start a fresh accounting window: everything stored so far now counts as
