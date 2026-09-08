@@ -1,4 +1,5 @@
 """Historical and checkpoint feature construction for the NFL Nori notebook."""
+
 from __future__ import annotations
 
 availability_features__STATUS_BUCKETS = ("out", "doubtful", "questionable")
@@ -8,13 +9,9 @@ def availability_features_availability_feature_columns() -> list[str]:
     """Return the numeric columns produced by :func:`build_availability_features`."""
     columns = ["availability_report_coverage", "availability_relevant_player_count"]
     for group in ("ol", "pass_catcher"):
-        columns.extend(
-            (
-                f"availability_{group}_{status}_count"
-                for status in availability_features__STATUS_BUCKETS
-            )
-        )
+        columns.extend((f"availability_{group}_{status}_count" for status in availability_features__STATUS_BUCKETS))
     return columns
+
 
 import numpy as checkpoint_history_np
 
@@ -73,19 +70,14 @@ def checkpoint_history_add_checkpoint_history(
                 recent = prior[-window:]
                 for source in checkpoint_history_SOURCES:
                     values = [
-                        r[source]
-                        for r in recent
-                        if r[source] is not None
-                        and checkpoint_history_np.isfinite(r[source])
+                        r[source] for r in recent if r[source] is not None and checkpoint_history_np.isfinite(r[source])
                     ]
                     mean = float(checkpoint_history_np.mean(values)) if values else None
                     f[f"checkpoint_history_{source}_mean_last{window}"] = mean
                     if source in checkpoint_history_SOURCES[:2]:
                         current = row[source]
                         f[f"checkpoint_deviation_{source}_last{window}"] = (
-                            float(current - mean)
-                            if current is not None and mean is not None
-                            else None
+                            float(current - mean) if current is not None and mean is not None else None
                         )
             features[i] = f
         for i in sorted(indices, key=lambda j: records[j]["kickoff_utc"]):
@@ -96,14 +88,13 @@ def checkpoint_history_add_checkpoint_history(
         rows.hstack(
             checkpoint_history_pl.DataFrame(
                 [features[i] for i in range(len(records))],
-                schema={
-                    c: checkpoint_history_pl.Float64 for c in (*averages, *deviations)
-                },
+                schema={c: checkpoint_history_pl.Float64 for c in (*averages, *deviations)},
             )
         ),
         averages,
         deviations,
     )
+
 
 from collections.abc import Sequence as context_features_Sequence
 
@@ -150,12 +141,8 @@ def context_features__require_columns(
 def context_features__validate_base_rows(
     base_rows: context_features_pl.DataFrame,
 ) -> None:
-    context_features__require_columns(
-        base_rows, context_features__BASE_KEYS, frame_name="base_rows"
-    )
-    if base_rows.select(
-        context_features_pl.struct(context_features__BASE_KEYS).is_duplicated().any()
-    ).item():
+    context_features__require_columns(base_rows, context_features__BASE_KEYS, frame_name="base_rows")
+    if base_rows.select(context_features_pl.struct(context_features__BASE_KEYS).is_duplicated().any()).item():
         raise ValueError("base_rows must have exactly one row per game_id/team")
 
 
@@ -166,21 +153,14 @@ def context_features__schedule_rows(
 ) -> context_features_pl.DataFrame:
     context_features__validate_base_rows(base_rows)
     required_schedule_columns = ("game_id", "home_team", "away_team", *schedule_columns)
-    context_features__require_columns(
-        schedules, required_schedule_columns, frame_name="schedules"
-    )
+    context_features__require_columns(schedules, required_schedule_columns, frame_name="schedules")
     schedule_lookup = schedules.select(
         context_features_pl.col("game_id"),
         context_features_pl.col("home_team").alias("_schedule_home_team"),
         context_features_pl.col("away_team").alias("_schedule_away_team"),
-        *[
-            context_features_pl.col(column).alias(f"_schedule_{column}")
-            for column in schedule_columns
-        ],
+        *[context_features_pl.col(column).alias(f"_schedule_{column}") for column in schedule_columns],
     )
-    if schedule_lookup.select(
-        context_features_pl.col("game_id").is_duplicated().any()
-    ).item():
+    if schedule_lookup.select(context_features_pl.col("game_id").is_duplicated().any()).item():
         raise ValueError("schedules must have exactly one row per game_id")
     rows = (
         base_rows.with_row_index("_feature_row_order")
@@ -192,26 +172,19 @@ def context_features__schedule_rows(
             maintain_order="left",
         )
         .with_columns(
-            (
-                context_features_pl.col("team")
-                == context_features_pl.col("_schedule_home_team")
-            ).alias("_feature_is_home"),
-            (
-                context_features_pl.col("team")
-                == context_features_pl.col("_schedule_away_team")
-            ).alias("_feature_is_away"),
+            (context_features_pl.col("team") == context_features_pl.col("_schedule_home_team")).alias(
+                "_feature_is_home"
+            ),
+            (context_features_pl.col("team") == context_features_pl.col("_schedule_away_team")).alias(
+                "_feature_is_away"
+            ),
         )
     )
     missing_games = (
-        rows.filter(context_features_pl.col("_schedule_home_team").is_null())
-        .get_column("game_id")
-        .unique()
-        .to_list()
+        rows.filter(context_features_pl.col("_schedule_home_team").is_null()).get_column("game_id").unique().to_list()
     )
     if missing_games:
-        raise ValueError(
-            f"base_rows contain game_ids absent from schedules: {missing_games[:5]}"
-        )
+        raise ValueError(f"base_rows contain game_ids absent from schedules: {missing_games[:5]}")
     invalid_teams = rows.filter(
         ~(
             context_features_pl.col("_feature_is_home").fill_null(False)
@@ -220,9 +193,7 @@ def context_features__schedule_rows(
     ).select("game_id", "team")
     if invalid_teams.height:
         examples = invalid_teams.head(5).rows()
-        raise ValueError(
-            f"base_rows teams must match exactly one schedule side: {examples}"
-        )
+        raise ValueError(f"base_rows teams must match exactly one schedule side: {examples}")
     return rows
 
 
@@ -233,10 +204,7 @@ def context_features__nullable_binary(
     alias: str,
 ) -> context_features_pl.Expr:
     return (
-        context_features_pl.when(present)
-        .then(condition.cast(context_features_pl.Float64))
-        .otherwise(None)
-        .alias(alias)
+        context_features_pl.when(present).then(condition.cast(context_features_pl.Float64)).otherwise(None).alias(alias)
     )
 
 
@@ -245,14 +213,10 @@ def context_features__finish(
     base_rows: context_features_pl.DataFrame,
     feature_columns: context_features_Sequence[str],
 ) -> context_features_pl.DataFrame:
-    output = rows.sort("_feature_row_order").select(
-        *base_rows.columns, *feature_columns
-    )
+    output = rows.sort("_feature_row_order").select(*base_rows.columns, *feature_columns)
     if output.height != base_rows.height:
         raise RuntimeError("feature builder changed the number of input rows")
-    if output.select(
-        context_features_pl.struct(context_features__BASE_KEYS).is_duplicated().any()
-    ).item():
+    if output.select(context_features_pl.struct(context_features__BASE_KEYS).is_duplicated().any()).item():
         raise RuntimeError("feature builder produced duplicate game_id/team rows")
     return output
 
@@ -271,9 +235,7 @@ def context_features_build_context_features(
     no weather value is imputed.
     """
     schedule_columns = ("location", "home_rest", "away_rest", "roof", "temp", "wind")
-    rows = context_features__schedule_rows(
-        base_rows, schedules, schedule_columns
-    ).with_columns(
+    rows = context_features__schedule_rows(base_rows, schedules, schedule_columns).with_columns(
         context_features_pl.when(context_features_pl.col("_feature_is_home"))
         .then(context_features_pl.col("_schedule_home_rest"))
         .otherwise(context_features_pl.col("_schedule_away_rest"))
@@ -297,19 +259,16 @@ def context_features_build_context_features(
     )
     roof_present = context_features_pl.col("_feature_roof").is_not_null()
     rows = rows.with_columns(
-        context_features_pl.col("_feature_is_home")
-        .cast(context_features_pl.Float64)
-        .alias("context_is_home"),
+        context_features_pl.col("_feature_is_home").cast(context_features_pl.Float64).alias("context_is_home"),
         context_features__nullable_binary(
             context_features_pl.col("_feature_location") == "neutral",
             present=context_features_pl.col("_feature_location").is_not_null(),
             alias="context_is_neutral_site",
         ),
         context_features_pl.col("_feature_team_rest").alias("context_team_rest_days"),
-        (
-            context_features_pl.col("_feature_team_rest")
-            - context_features_pl.col("_feature_opponent_rest")
-        ).alias("context_rest_advantage_days"),
+        (context_features_pl.col("_feature_team_rest") - context_features_pl.col("_feature_opponent_rest")).alias(
+            "context_rest_advantage_days"
+        ),
         context_features__nullable_binary(
             context_features_pl.col("_feature_team_rest") < 7.0,
             present=context_features_pl.col("_feature_team_rest").is_not_null(),
@@ -329,9 +288,7 @@ def context_features_build_context_features(
             for roof in context_features__ROOF_VALUES
         ],
         context_features__nullable_binary(
-            ~context_features_pl.col("_feature_roof").is_in(
-                context_features__ROOF_VALUES
-            ),
+            ~context_features_pl.col("_feature_roof").is_in(context_features__ROOF_VALUES),
             present=roof_present,
             alias="context_roof_other",
         ),
@@ -339,16 +296,11 @@ def context_features_build_context_features(
         .is_null()
         .cast(context_features_pl.Float64)
         .alias("context_roof_missing"),
-        context_features_pl.col("_schedule_temp")
-        .cast(context_features_pl.Float64)
-        .alias("context_temperature_f"),
-        context_features_pl.col("_schedule_wind")
-        .cast(context_features_pl.Float64)
-        .alias("context_wind_mph"),
+        context_features_pl.col("_schedule_temp").cast(context_features_pl.Float64).alias("context_temperature_f"),
+        context_features_pl.col("_schedule_wind").cast(context_features_pl.Float64).alias("context_wind_mph"),
     )
-    return context_features__finish(
-        rows, base_rows, context_features_CONTEXT_FEATURE_COLUMNS
-    )
+    return context_features__finish(rows, base_rows, context_features_CONTEXT_FEATURE_COLUMNS)
+
 
 from collections.abc import Callable as data_Callable
 
@@ -456,9 +408,7 @@ def data__load_pbp_defense_fields(seasons: list[int]) -> data_pl.DataFrame:
     )
 
 
-def data_load_nflverse_tables(
-    config: data_DataConfig, refresh: bool = False
-) -> dict[str, data_pl.DataFrame]:
+def data_load_nflverse_tables(config: data_DataConfig, refresh: bool = False) -> dict[str, data_pl.DataFrame]:
     season_tag = f"{config.warmup_start_season}_{config.test_season}"
     depth_tag = f"{config.first_eligible_season}_{config.test_season}"
     pbp_starter_seasons = config.depth_chart_seasons
@@ -482,8 +432,7 @@ def data_load_nflverse_tables(
             refresh,
         ),
         "pbp_starter_plays": data__load_cached(
-            config.cache_dir
-            / f"pbp_starter_plays_{pbp_starter_seasons[0]}_{pbp_starter_seasons[-1]}.parquet",
+            config.cache_dir / f"pbp_starter_plays_{pbp_starter_seasons[0]}_{pbp_starter_seasons[-1]}.parquet",
             data__load_pbp_starter_fields,
             pbp_starter_seasons,
             refresh,
@@ -523,16 +472,12 @@ def data_normalize_schedules(
         )
         .with_columns(
             data_pl.concat_str(["gameday", "gametime"], separator=" ")
-            .str.to_datetime(
-                "%Y-%m-%d %H:%M", time_zone="America/New_York", strict=True
-            )
+            .str.to_datetime("%Y-%m-%d %H:%M", time_zone="America/New_York", strict=True)
             .dt.convert_time_zone("UTC")
             .alias("kickoff_utc")
         )
         .with_columns(
-            (
-                data_pl.col("kickoff_utc") - data_pl.duration(minutes=cutoff_minutes)
-            ).alias("prediction_cutoff_utc")
+            (data_pl.col("kickoff_utc") - data_pl.duration(minutes=cutoff_minutes)).alias("prediction_cutoff_utc")
         )
     )
     shared = [
@@ -616,20 +561,12 @@ def data_select_anticipated_starters(
     ).rename({"club_code": "team"})
     legacy = legacy.with_columns(
         data_pl.lit("weekly_depth_chart").alias("starter_source"),
-        data_pl.lit(None, dtype=data_pl.Datetime(time_zone="UTC")).alias(
-            "starter_snapshot_utc"
-        ),
+        data_pl.lit(None, dtype=data_pl.Datetime(time_zone="UTC")).alias("starter_snapshot_utc"),
         data_pl.lit(False).alias("starter_cutoff_verified"),
     )
     current = depth_charts.filter(
-        data_pl.col("dt").is_not_null()
-        & (data_pl.col("pos_abb") == "QB")
-        & (data_pl.col("pos_rank") == 1)
-    ).with_columns(
-        data_pl.col("dt")
-        .str.to_datetime(time_zone="UTC", strict=True)
-        .alias("starter_snapshot_utc")
-    )
+        data_pl.col("dt").is_not_null() & (data_pl.col("pos_abb") == "QB") & (data_pl.col("pos_rank") == 1)
+    ).with_columns(data_pl.col("dt").str.to_datetime(time_zone="UTC", strict=True).alias("starter_snapshot_utc"))
     current = data__unique_starters(
         current,
         keys=["starter_snapshot_utc", "team"],
@@ -654,9 +591,7 @@ def data_select_anticipated_starters(
             check_sortedness=False,
         )
     )
-    return data_pl.concat([legacy_rows, current_rows], how="diagonal_relaxed").sort(
-        ["kickoff_utc", "game_id", "team"]
-    )
+    return data_pl.concat([legacy_rows, current_rows], how="diagonal_relaxed").sort(["kickoff_utc", "game_id", "team"])
 
 
 def data_actual_starters_from_participation(
@@ -679,10 +614,7 @@ def data_actual_starters_from_participation(
             players.alias("offense_player_ids"),
             positions.alias("offense_player_positions"),
         )
-        .filter(
-            data_pl.col("offense_player_ids").list.len()
-            == data_pl.col("offense_player_positions").list.len()
-        )
+        .filter(data_pl.col("offense_player_ids").list.len() == data_pl.col("offense_player_positions").list.len())
         .explode(["offense_player_ids", "offense_player_positions"], empty_as_null=True)
         .filter(data_pl.col("offense_player_positions") == "QB")
         .select(
@@ -706,9 +638,7 @@ def data_actual_starters_from_participation(
         .group_by(["game_id", "team"])
         .agg(
             data_pl.col("play_id").first().alias("actual_starter_play_id"),
-            data_pl.col("actual_qb_id")
-            .n_unique()
-            .alias("actual_starter_candidate_count"),
+            data_pl.col("actual_qb_id").n_unique().alias("actual_starter_candidate_count"),
             data_pl.col("actual_qb_id").first(),
         )
         .with_columns(
@@ -716,9 +646,7 @@ def data_actual_starters_from_participation(
             .then(data_pl.col("actual_qb_id"))
             .otherwise(None)
             .alias("actual_qb_id"),
-            data_pl.lit("first_offensive_qb_participation").alias(
-                "actual_starter_source"
-            ),
+            data_pl.lit("first_offensive_qb_participation").alias("actual_starter_source"),
         )
     )
 
@@ -743,15 +671,12 @@ def data_actual_starters_from_first_passer(
         .rename({"posteam": "team"})
         .with_columns(
             data_pl.when(
-                (data_pl.col("game_id").str.slice(0, 4).cast(data_pl.Int32) < 2020)
-                & (data_pl.col("team") == "LV")
+                (data_pl.col("game_id").str.slice(0, 4).cast(data_pl.Int32) < 2020) & (data_pl.col("team") == "LV")
             )
             .then(data_pl.lit("OAK"))
             .otherwise(data_pl.col("team"))
             .alias("team"),
-            data_pl.lit(1, dtype=data_pl.UInt32).alias(
-                "actual_starter_candidate_count"
-            ),
+            data_pl.lit(1, dtype=data_pl.UInt32).alias("actual_starter_candidate_count"),
             data_pl.lit("first_passer_fallback").alias("actual_starter_source"),
         )
     )
@@ -763,13 +688,13 @@ def data_attach_postgame_outcomes(
     pbp_starter_plays: data_pl.DataFrame,
     player_stats: data_pl.DataFrame,
 ) -> data_pl.DataFrame:
-    participation_starters = data_actual_starters_from_participation(
-        participation
-    ).filter(data_pl.col("actual_qb_id").is_not_null())
+    participation_starters = data_actual_starters_from_participation(participation).filter(
+        data_pl.col("actual_qb_id").is_not_null()
+    )
     fallback_starters = data_actual_starters_from_first_passer(pbp_starter_plays)
-    actual_starters = data_pl.concat(
-        [participation_starters, fallback_starters], how="diagonal_relaxed"
-    ).unique(["game_id", "team"], keep="first", maintain_order=True)
+    actual_starters = data_pl.concat([participation_starters, fallback_starters], how="diagonal_relaxed").unique(
+        ["game_id", "team"], keep="first", maintain_order=True
+    )
     recorded_passers = (
         pbp_starter_plays.filter(data_pl.col("passer_player_id").is_not_null())
         .select("game_id", data_pl.col("passer_player_id").alias("actual_qb_id"))
@@ -782,18 +707,14 @@ def data_attach_postgame_outcomes(
             "game_id",
             data_pl.col("player_id").alias("actual_qb_id"),
             data_pl.col("player_display_name").alias("actual_qb_name"),
-            data_pl.col("passing_yards")
-            .cast(data_pl.Float64)
-            .alias("official_passing_yards"),
+            data_pl.col("passing_yards").cast(data_pl.Float64).alias("official_passing_yards"),
         )
         .unique(["game_id", "actual_qb_id"])
     )
     return (
         rows.join(actual_starters, on=["game_id", "team"], how="left", validate="1:1")
         .join(qb_outcomes, on=["game_id", "actual_qb_id"], how="left", validate="m:1")
-        .join(
-            recorded_passers, on=["game_id", "actual_qb_id"], how="left", validate="m:1"
-        )
+        .join(recorded_passers, on=["game_id", "actual_qb_id"], how="left", validate="m:1")
         .with_columns(data_pl.col("actual_recorded_pass").fill_null(False))
         .with_columns(
             (
@@ -816,10 +737,9 @@ def data_attach_postgame_outcomes(
             ).alias("starter_matches_actual")
         )
         .with_columns(
-            (
-                data_pl.col("starter_matches_actual")
-                & data_pl.col("official_passing_yards").is_not_null()
-            ).alias("evaluation_eligible")
+            (data_pl.col("starter_matches_actual") & data_pl.col("official_passing_yards").is_not_null()).alias(
+                "evaluation_eligible"
+            )
         )
     )
 
@@ -840,15 +760,14 @@ def data_build_base_qb_game_table(
         cutoff_minutes=config.prediction_cutoff_minutes,
     )
     rows = data_select_anticipated_starters(schedule_rows, depth_charts)
-    rows = data_attach_postgame_outcomes(
-        rows, participation, pbp_starter_plays, player_stats
-    )
+    rows = data_attach_postgame_outcomes(rows, participation, pbp_starter_plays, player_stats)
     return rows.with_columns(
         data_pl.when(data_pl.col("anticipated_qb_id").is_null())
         .then(data_pl.lit("missing_or_ambiguous_qb1"))
         .otherwise(data_pl.lit("eligible_starter_row"))
         .alias("row_status")
     )
+
 
 import polars as defense_features_pl
 
@@ -863,23 +782,18 @@ defense_features__ROLLING_COMPONENTS = (
 )
 
 
-def defense_features__safe_ratio(
-    numerator: str, denominator: str, alias: str
-) -> defense_features_pl.Expr:
+def defense_features__safe_ratio(numerator: str, denominator: str, alias: str) -> defense_features_pl.Expr:
     return (
         defense_features_pl.when(defense_features_pl.col(denominator) > 0)
         .then(
-            defense_features_pl.col(numerator).cast(defense_features_pl.Float64)
-            / defense_features_pl.col(denominator)
+            defense_features_pl.col(numerator).cast(defense_features_pl.Float64) / defense_features_pl.col(denominator)
         )
         .otherwise(None)
         .alias(alias)
     )
 
 
-def defense_features__franchise_team(
-    column: str, alias: str
-) -> defense_features_pl.Expr:
+def defense_features__franchise_team(column: str, alias: str) -> defense_features_pl.Expr:
     return (
         defense_features_pl.when(defense_features_pl.col(column).is_in(["OAK", "LV"]))
         .then(defense_features_pl.lit("LV"))
@@ -890,14 +804,8 @@ def defense_features__franchise_team(
 
 def defense_features__validated_windows(windows: tuple[int, ...]) -> tuple[int, ...]:
     normalized = tuple((int(window) for window in windows))
-    if (
-        not normalized
-        or any((window <= 0 for window in normalized))
-        or len(normalized) != len(set(normalized))
-    ):
-        raise ValueError(
-            f"Rolling windows must be unique positive integers, got {windows}"
-        )
+    if not normalized or any((window <= 0 for window in normalized)) or len(normalized) != len(set(normalized)):
+        raise ValueError(f"Rolling windows must be unique positive integers, got {windows}")
     return normalized
 
 
@@ -932,9 +840,7 @@ def defense_features_defense_feature_columns(windows: tuple[int, ...]) -> list[s
     return features
 
 
-def defense_features__required_columns(
-    frame: defense_features_pl.DataFrame, columns: set[str], label: str
-) -> None:
+def defense_features__required_columns(frame: defense_features_pl.DataFrame, columns: set[str], label: str) -> None:
     missing = columns.difference(frame.columns)
     if missing:
         raise ValueError(f"{label} is missing required columns: {sorted(missing)}")
@@ -944,17 +850,9 @@ def defense_features__passing_yards_expression(
     pbp_rows: defense_features_pl.DataFrame,
 ) -> defense_features_pl.Expr:
     if "passing_yards" in pbp_rows.columns:
-        return (
-            defense_features_pl.col("passing_yards")
-            .cast(defense_features_pl.Float64)
-            .fill_null(0.0)
-        )
+        return defense_features_pl.col("passing_yards").cast(defense_features_pl.Float64).fill_null(0.0)
     if "yards_gained" in pbp_rows.columns:
-        return (
-            defense_features_pl.col("yards_gained")
-            .cast(defense_features_pl.Float64)
-            .fill_null(0.0)
-        )
+        return defense_features_pl.col("yards_gained").cast(defense_features_pl.Float64).fill_null(0.0)
     raise ValueError("Play-by-play rows need passing_yards or yards_gained")
 
 
@@ -963,9 +861,7 @@ def defense_features__aggregate_defense_team_games(
     schedules: defense_features_pl.DataFrame,
     season_type: str,
 ) -> defense_features_pl.DataFrame:
-    defense_features__required_columns(
-        schedules, {"game_id", "season", "week", "game_type"}, "Schedules"
-    )
+    defense_features__required_columns(schedules, {"game_id", "season", "week", "game_type"}, "Schedules")
     defense_features__required_columns(
         pbp_rows,
         {"game_id", "defteam", "qb_dropback", "sack", "qb_hit", "complete_pass", "epa"},
@@ -977,9 +873,7 @@ def defense_features__aggregate_defense_team_games(
         .unique("game_id")
     )
     if "season_type" in pbp_rows.columns:
-        pbp_rows = pbp_rows.filter(
-            defense_features_pl.col("season_type") == season_type
-        )
+        pbp_rows = pbp_rows.filter(defense_features_pl.col("season_type") == season_type)
     is_dropback = defense_features_pl.col("qb_dropback").fill_null(0.0) == 1.0
     is_sack = defense_features_pl.col("sack").fill_null(0.0) == 1.0
     is_qb_hit = defense_features_pl.col("qb_hit").fill_null(0.0) == 1.0
@@ -1014,26 +908,15 @@ def defense_features__aggregate_defense_team_games(
             .then(1.0)
             .otherwise(0.0)
             .alias("defense_epa_dropbacks"),
-            defense_features_pl.when(is_sack)
-            .then(1.0)
-            .otherwise(0.0)
-            .alias("defense_sacks"),
-            defense_features_pl.when(is_qb_hit | is_sack)
-            .then(1.0)
-            .otherwise(0.0)
-            .alias("defense_qb_hits_or_sacks"),
+            defense_features_pl.when(is_sack).then(1.0).otherwise(0.0).alias("defense_sacks"),
+            defense_features_pl.when(is_qb_hit | is_sack).then(1.0).otherwise(0.0).alias("defense_qb_hits_or_sacks"),
             defense_features_pl.when(is_complete & ~is_sack & (passing_yards >= 20.0))
             .then(1.0)
             .otherwise(0.0)
             .alias("defense_explosive_completed_passes"),
         )
         .group_by(["game_id", "history_defense_team"])
-        .agg(
-            *[
-                defense_features_pl.col(component).sum()
-                for component in defense_features__ROLLING_COMPONENTS
-            ]
-        )
+        .agg(*[defense_features_pl.col(component).sum() for component in defense_features__ROLLING_COMPONENTS])
         .join(schedule_games, on="game_id", how="inner", validate="m:1")
         .with_columns(
             defense_features_pl.lit(1.0).alias("history_game_count"),
@@ -1052,9 +935,7 @@ def defense_features__defense_history(
     season_type: str,
     windows: tuple[int, ...],
 ) -> defense_features_pl.DataFrame:
-    history = defense_features__aggregate_defense_team_games(
-        pbp_rows, schedules, season_type
-    )
+    history = defense_features__aggregate_defense_team_games(pbp_rows, schedules, season_type)
     for window in windows:
         history = history.with_columns(
             *[
@@ -1128,9 +1009,7 @@ def defense_features__feature_expressions(
 ) -> list[defense_features_pl.Expr]:
     expressions: list[defense_features_pl.Expr] = []
     for window in windows:
-        expressions.extend(
-            defense_features__period_feature_expressions(f"last{window}")
-        )
+        expressions.extend(defense_features__period_feature_expressions(f"last{window}"))
     expressions.extend(defense_features__period_feature_expressions("season"))
     return expressions
 
@@ -1144,18 +1023,14 @@ def defense_features_build_defense_features(
 ) -> defense_features_pl.DataFrame:
     """Attach opponent-defense features using games strictly before each row's week."""
     windows = defense_features__validated_windows(windows)
-    defense_features__required_columns(
-        base_rows, {"game_id", "season", "week", "opponent_team"}, "Base rows"
-    )
+    defense_features__required_columns(base_rows, {"game_id", "season", "week", "opponent_team"}, "Base rows")
     feature_columns = defense_features_defense_feature_columns(windows)
     overlapping = set(feature_columns).intersection(base_rows.columns)
     if overlapping:
-        raise ValueError(
-            f"Base rows already contain defense features: {sorted(overlapping)}"
-        )
-    history = defense_features__defense_history(
-        pbp_rows, schedules, season_type, windows
-    ).with_columns(*defense_features__feature_expressions(windows))
+        raise ValueError(f"Base rows already contain defense features: {sorted(overlapping)}")
+    history = defense_features__defense_history(pbp_rows, schedules, season_type, windows).with_columns(
+        *defense_features__feature_expressions(windows)
+    )
     history_features = history.select(
         "history_defense_team",
         "history_week_order",
@@ -1184,21 +1059,14 @@ def defense_features_build_defense_features(
         )
     )
     season_value_columns = [
-        column
-        for column in feature_columns
-        if column.endswith("_season") and column != "defense_history_games_season"
+        column for column in feature_columns if column.endswith("_season") and column != "defense_history_games_season"
     ]
-    count_columns = [
-        column
-        for column in feature_columns
-        if column.startswith("defense_history_games_last")
-    ]
+    count_columns = [column for column in feature_columns if column.startswith("defense_history_games_last")]
     return (
         rows.with_columns(
             *[
                 defense_features_pl.when(
-                    defense_features_pl.col("defense_history_season")
-                    == defense_features_pl.col("season")
+                    defense_features_pl.col("defense_history_season") == defense_features_pl.col("season")
                 )
                 .then(defense_features_pl.col(column))
                 .otherwise(None)
@@ -1206,17 +1074,13 @@ def defense_features_build_defense_features(
                 for column in season_value_columns
             ],
             defense_features_pl.when(
-                defense_features_pl.col("defense_history_season")
-                == defense_features_pl.col("season")
+                defense_features_pl.col("defense_history_season") == defense_features_pl.col("season")
             )
             .then(defense_features_pl.col("defense_history_games_season"))
             .otherwise(0.0)
             .fill_null(0.0)
             .alias("defense_history_games_season"),
-            *[
-                defense_features_pl.col(column).fill_null(0.0).alias(column)
-                for column in count_columns
-            ],
+            *[defense_features_pl.col(column).fill_null(0.0).alias(column) for column in count_columns],
         )
         .sort("_defense_base_order")
         .drop(
@@ -1229,6 +1093,7 @@ def defense_features_build_defense_features(
             strict=False,
         )
     )
+
 
 derived_features__TREND_BASES = (
     "qb_attempts_avg",
@@ -1260,10 +1125,7 @@ derived_features__DISPERSION_BASES = (
 
 derived_features_TREND_FEATURE_COLUMNS = tuple(
     [f"trend_{base}_last3_minus_last8" for base in derived_features__TREND_BASES]
-    + [
-        f"dispersion_{base}_last3_vs_last8"
-        for base in derived_features__DISPERSION_BASES
-    ]
+    + [f"dispersion_{base}_last3_vs_last8" for base in derived_features__DISPERSION_BASES]
 )
 
 derived_features_MATCHUP_FEATURE_COLUMNS = (
@@ -1292,36 +1154,25 @@ features__ROLLING_COMPONENTS = (
 )
 
 
-def features__safe_ratio(
-    numerator: str, denominator: str, alias: str
-) -> features_pl.Expr:
+def features__safe_ratio(numerator: str, denominator: str, alias: str) -> features_pl.Expr:
     return (
         features_pl.when(features_pl.col(denominator) > 0)
-        .then(
-            features_pl.col(numerator).cast(features_pl.Float64)
-            / features_pl.col(denominator)
-        )
+        .then(features_pl.col(numerator).cast(features_pl.Float64) / features_pl.col(denominator))
         .otherwise(None)
         .alias(alias)
     )
 
 
-def features__game_kickoffs(
-    schedules: features_pl.DataFrame, config: data_DataConfig
-) -> features_pl.DataFrame:
+def features__game_kickoffs(schedules: features_pl.DataFrame, config: data_DataConfig) -> features_pl.DataFrame:
     return (
         schedules.filter(
             (features_pl.col("game_type") == config.season_type)
-            & features_pl.col("season").is_between(
-                config.warmup_start_season, config.test_season
-            )
+            & features_pl.col("season").is_between(config.warmup_start_season, config.test_season)
         )
         .select(
             "game_id",
             features_pl.concat_str(["gameday", "gametime"], separator=" ")
-            .str.to_datetime(
-                "%Y-%m-%d %H:%M", time_zone="America/New_York", strict=True
-            )
+            .str.to_datetime("%Y-%m-%d %H:%M", time_zone="America/New_York", strict=True)
             .dt.convert_time_zone("UTC")
             .alias("history_game_kickoff_utc"),
         )
@@ -1359,14 +1210,11 @@ def features__qb_history(
             validate="m:1",
         )
         .with_columns(
-            (features_pl.col("attempts") + features_pl.col("sacks_suffered")).alias(
-                "dropbacks"
-            ),
+            (features_pl.col("attempts") + features_pl.col("sacks_suffered")).alias("dropbacks"),
             features_pl.lit(1.0).alias("history_game_count"),
-            (
-                features_pl.col("season").cast(features_pl.Int64) * 100
-                + features_pl.col("week")
-            ).alias("history_week_order"),
+            (features_pl.col("season").cast(features_pl.Int64) * 100 + features_pl.col("week")).alias(
+                "history_week_order"
+            ),
         )
         .filter(features_pl.col("dropbacks") > 0)
         .with_columns(
@@ -1406,16 +1254,10 @@ def features__qb_history(
         )
     history = history.with_columns(
         *[
-            features_pl.col(component)
-            .cum_sum()
-            .over(["player_id", "season"])
-            .alias(f"{component}_season_sum")
+            features_pl.col(component).cum_sum().over(["player_id", "season"]).alias(f"{component}_season_sum")
             for component in features__ROLLING_COMPONENTS
         ],
-        features_pl.col("history_game_count")
-        .cum_sum()
-        .over(["player_id", "season"])
-        .alias("history_games_season"),
+        features_pl.col("history_game_count").cum_sum().over(["player_id", "season"]).alias("history_games_season"),
     )
     return history
 
@@ -1464,15 +1306,9 @@ def features__feature_expressions(windows: tuple[int, ...]) -> list[features_pl.
         features_pl.col("attempts").alias("qb_attempts_lag1"),
         features_pl.col("passing_yards").alias("qb_passing_yards_lag1"),
         features__safe_ratio("passing_yards", "attempts", "qb_ypa_lag1"),
-        features__safe_ratio(
-            "passing_epa_value", "passing_epa_dropbacks", "qb_epa_per_dropback_lag1"
-        ),
-        features__safe_ratio(
-            "passing_cpoe_weighted", "passing_cpoe_attempts", "qb_cpoe_lag1"
-        ),
-        features__safe_ratio(
-            "passing_air_yards", "attempts", "qb_air_yards_per_attempt_lag1"
-        ),
+        features__safe_ratio("passing_epa_value", "passing_epa_dropbacks", "qb_epa_per_dropback_lag1"),
+        features__safe_ratio("passing_cpoe_weighted", "passing_cpoe_attempts", "qb_cpoe_lag1"),
+        features__safe_ratio("passing_air_yards", "attempts", "qb_air_yards_per_attempt_lag1"),
         features__safe_ratio("sacks_suffered", "dropbacks", "qb_sack_rate_lag1"),
     ]
     for window in windows:
@@ -1481,9 +1317,7 @@ def features__feature_expressions(windows: tuple[int, ...]) -> list[features_pl.
         expressions.extend(
             [
                 features_pl.col(count).alias(f"qb_history_games_{suffix}"),
-                features__safe_ratio(
-                    f"attempts_{suffix}_sum", count, f"qb_attempts_avg_{suffix}"
-                ),
+                features__safe_ratio(f"attempts_{suffix}_sum", count, f"qb_attempts_avg_{suffix}"),
                 features__safe_ratio(
                     f"passing_yards_{suffix}_sum",
                     count,
@@ -1519,17 +1353,13 @@ def features__feature_expressions(windows: tuple[int, ...]) -> list[features_pl.
     expressions.extend(
         [
             features_pl.col("history_games_season").alias("qb_history_games_season"),
-            features__safe_ratio(
-                "attempts_season_sum", "history_games_season", "qb_attempts_avg_season"
-            ),
+            features__safe_ratio("attempts_season_sum", "history_games_season", "qb_attempts_avg_season"),
             features__safe_ratio(
                 "passing_yards_season_sum",
                 "history_games_season",
                 "qb_passing_yards_avg_season",
             ),
-            features__safe_ratio(
-                "passing_yards_season_sum", "attempts_season_sum", "qb_ypa_season"
-            ),
+            features__safe_ratio("passing_yards_season_sum", "attempts_season_sum", "qb_ypa_season"),
             features__safe_ratio(
                 "passing_epa_value_season_sum",
                 "passing_epa_dropbacks_season_sum",
@@ -1573,18 +1403,13 @@ def features_build_qb_rolling_features(
         features_pl.col("season").alias("qb_history_season"),
         features_pl.col("game_id").alias("qb_previous_game_id"),
         "history_game_kickoff_utc",
-        *[
-            column
-            for column in feature_columns
-            if column != "qb_days_since_previous_game"
-        ],
+        *[column for column in feature_columns if column != "qb_days_since_previous_game"],
     )
     rows = (
         base_rows.with_columns(
-            (
-                features_pl.col("season").cast(features_pl.Int64) * 100
-                + features_pl.col("week")
-            ).alias("prediction_week_order")
+            (features_pl.col("season").cast(features_pl.Int64) * 100 + features_pl.col("week")).alias(
+                "prediction_week_order"
+            )
         )
         .sort("prediction_week_order")
         .join_asof(
@@ -1599,23 +1424,17 @@ def features_build_qb_rolling_features(
         )
     )
     season_value_columns = [
-        column
-        for column in feature_columns
-        if column.endswith("_season") and column != "qb_history_games_season"
+        column for column in feature_columns if column.endswith("_season") and column != "qb_history_games_season"
     ]
     rows = rows.with_columns(
         *[
-            features_pl.when(
-                features_pl.col("qb_history_season") == features_pl.col("season")
-            )
+            features_pl.when(features_pl.col("qb_history_season") == features_pl.col("season"))
             .then(features_pl.col(column))
             .otherwise(None)
             .alias(column)
             for column in season_value_columns
         ],
-        features_pl.when(
-            features_pl.col("qb_history_season") == features_pl.col("season")
-        )
+        features_pl.when(features_pl.col("qb_history_season") == features_pl.col("season"))
         .then(features_pl.col("qb_history_games_season"))
         .otherwise(0.0)
         .fill_null(0.0)
@@ -1625,23 +1444,13 @@ def features_build_qb_rolling_features(
         .cast(features_pl.Float64)
         .alias("qb_days_since_previous_game"),
     )
-    count_columns = [
-        column
-        for column in feature_columns
-        if column.startswith("qb_history_games_last")
-    ]
+    count_columns = [column for column in feature_columns if column.startswith("qb_history_games_last")]
     return (
-        rows.with_columns(
-            *[
-                features_pl.col(column).fill_null(0.0).alias(column)
-                for column in count_columns
-            ]
-        )
-        .drop(
-            "prediction_week_order", "history_week_order", "history_qb_id", strict=False
-        )
+        rows.with_columns(*[features_pl.col(column).fill_null(0.0).alias(column) for column in count_columns])
+        .drop("prediction_week_order", "history_week_order", "history_qb_id", strict=False)
         .sort(["kickoff_utc", "game_id", "team"])
     )
+
 
 import polars as offense_features_pl
 
@@ -1654,23 +1463,18 @@ offense_features__ROLLING_COMPONENTS = (
 )
 
 
-def offense_features__safe_ratio(
-    numerator: str, denominator: str, alias: str
-) -> offense_features_pl.Expr:
+def offense_features__safe_ratio(numerator: str, denominator: str, alias: str) -> offense_features_pl.Expr:
     return (
         offense_features_pl.when(offense_features_pl.col(denominator) > 0)
         .then(
-            offense_features_pl.col(numerator).cast(offense_features_pl.Float64)
-            / offense_features_pl.col(denominator)
+            offense_features_pl.col(numerator).cast(offense_features_pl.Float64) / offense_features_pl.col(denominator)
         )
         .otherwise(None)
         .alias(alias)
     )
 
 
-def offense_features__franchise_team(
-    column: str, alias: str
-) -> offense_features_pl.Expr:
+def offense_features__franchise_team(column: str, alias: str) -> offense_features_pl.Expr:
     return (
         offense_features_pl.when(offense_features_pl.col(column).is_in(["OAK", "LV"]))
         .then(offense_features_pl.lit("LV"))
@@ -1685,16 +1489,12 @@ def offense_features__game_kickoffs(
     return (
         schedules.filter(
             (offense_features_pl.col("game_type") == config.season_type)
-            & offense_features_pl.col("season").is_between(
-                config.warmup_start_season, config.test_season
-            )
+            & offense_features_pl.col("season").is_between(config.warmup_start_season, config.test_season)
         )
         .select(
             "game_id",
             offense_features_pl.concat_str(["gameday", "gametime"], separator=" ")
-            .str.to_datetime(
-                "%Y-%m-%d %H:%M", time_zone="America/New_York", strict=True
-            )
+            .str.to_datetime("%Y-%m-%d %H:%M", time_zone="America/New_York", strict=True)
             .dt.convert_time_zone("UTC")
             .alias("history_game_kickoff_utc"),
         )
@@ -1709,17 +1509,13 @@ def offense_features_aggregate_offense_team_games(
 ) -> offense_features_pl.DataFrame:
     is_dropback = offense_features_pl.col("qb_dropback").fill_null(0.0) == 1.0
     is_rush = offense_features_pl.col("rush_attempt").fill_null(0.0) == 1.0
-    is_neutral = (
-        offense_features_pl.col("qtr") <= config.neutral_max_quarter
-    ) & offense_features_pl.col("wp").is_between(
-        config.neutral_wp_lower, config.neutral_wp_upper, closed="both"
-    )
+    is_neutral = (offense_features_pl.col("qtr") <= config.neutral_max_quarter) & offense_features_pl.col(
+        "wp"
+    ).is_between(config.neutral_wp_lower, config.neutral_wp_upper, closed="both")
     return (
         pbp.filter(
             (offense_features_pl.col("season_type") == config.season_type)
-            & offense_features_pl.col("season").is_between(
-                config.warmup_start_season, config.test_season
-            )
+            & offense_features_pl.col("season").is_between(config.warmup_start_season, config.test_season)
             & offense_features_pl.col("game_id").is_not_null()
             & offense_features_pl.col("posteam").is_not_null()
             & offense_features_pl.col("play_id").is_not_null()
@@ -1739,22 +1535,11 @@ def offense_features_aggregate_offense_team_games(
             .then(1.0)
             .otherwise(0.0)
             .alias("offense_epa_plays"),
-            offense_features_pl.when(is_neutral & is_dropback)
-            .then(1.0)
-            .otherwise(0.0)
-            .alias("neutral_dropbacks"),
-            offense_features_pl.when(is_neutral)
-            .then(1.0)
-            .otherwise(0.0)
-            .alias("neutral_plays"),
+            offense_features_pl.when(is_neutral & is_dropback).then(1.0).otherwise(0.0).alias("neutral_dropbacks"),
+            offense_features_pl.when(is_neutral).then(1.0).otherwise(0.0).alias("neutral_plays"),
         )
         .group_by(["game_id", "season", "week", "history_team"])
-        .agg(
-            *[
-                offense_features_pl.col(component).sum()
-                for component in offense_features__ROLLING_COMPONENTS
-            ]
-        )
+        .agg(*[offense_features_pl.col(component).sum() for component in offense_features__ROLLING_COMPONENTS])
         .join(
             offense_features__game_kickoffs(schedules, config),
             on="game_id",
@@ -1838,12 +1623,8 @@ def offense_features__feature_expressions(
 ) -> list[offense_features_pl.Expr]:
     expressions = [
         offense_features_pl.col("offense_plays").alias("offense_plays_lag1"),
-        offense_features__safe_ratio(
-            "offense_epa_value", "offense_epa_plays", "offense_epa_per_play_lag1"
-        ),
-        offense_features__safe_ratio(
-            "neutral_dropbacks", "neutral_plays", "offense_neutral_pass_rate_lag1"
-        ),
+        offense_features__safe_ratio("offense_epa_value", "offense_epa_plays", "offense_epa_per_play_lag1"),
+        offense_features__safe_ratio("neutral_dropbacks", "neutral_plays", "offense_neutral_pass_rate_lag1"),
     ]
     for window in windows:
         suffix = f"last{window}"
@@ -1870,9 +1651,7 @@ def offense_features__feature_expressions(
         )
     expressions.extend(
         [
-            offense_features_pl.col("history_games_season").alias(
-                "offense_history_games_season"
-            ),
+            offense_features_pl.col("history_games_season").alias("offense_history_games_season"),
             offense_features__safe_ratio(
                 "offense_plays_season_sum",
                 "history_games_season",
@@ -1902,9 +1681,7 @@ def offense_features_build_offense_rolling_features(
     history = offense_features__offense_history(pbp, schedules, config).with_columns(
         *offense_features__feature_expressions(config.offense_rolling_windows)
     )
-    feature_columns = offense_features_offense_feature_columns(
-        config.offense_rolling_windows
-    )
+    feature_columns = offense_features_offense_feature_columns(config.offense_rolling_windows)
     history_features = history.select(
         "history_team",
         "history_week_order",
@@ -1933,42 +1710,27 @@ def offense_features_build_offense_rolling_features(
         )
     )
     season_value_columns = [
-        column
-        for column in feature_columns
-        if column.endswith("_season") and column != "offense_history_games_season"
+        column for column in feature_columns if column.endswith("_season") and column != "offense_history_games_season"
     ]
     rows = rows.with_columns(
         *[
             offense_features_pl.when(
-                offense_features_pl.col("offense_history_season")
-                == offense_features_pl.col("season")
+                offense_features_pl.col("offense_history_season") == offense_features_pl.col("season")
             )
             .then(offense_features_pl.col(column))
             .otherwise(None)
             .alias(column)
             for column in season_value_columns
         ],
-        offense_features_pl.when(
-            offense_features_pl.col("offense_history_season")
-            == offense_features_pl.col("season")
-        )
+        offense_features_pl.when(offense_features_pl.col("offense_history_season") == offense_features_pl.col("season"))
         .then(offense_features_pl.col("offense_history_games_season"))
         .otherwise(0.0)
         .fill_null(0.0)
         .alias("offense_history_games_season"),
     )
-    count_columns = [
-        column
-        for column in feature_columns
-        if column.startswith("offense_history_games_last")
-    ]
+    count_columns = [column for column in feature_columns if column.startswith("offense_history_games_last")]
     return (
-        rows.with_columns(
-            *[
-                offense_features_pl.col(column).fill_null(0.0).alias(column)
-                for column in count_columns
-            ]
-        )
+        rows.with_columns(*[offense_features_pl.col(column).fill_null(0.0).alias(column) for column in count_columns])
         .drop(
             "feature_team",
             "prediction_week_order",
@@ -1978,6 +1740,7 @@ def offense_features_build_offense_rolling_features(
         )
         .sort(["kickoff_utc", "game_id", "team"])
     )
+
 
 from collections.abc import Sequence as season_context_features_Sequence
 
@@ -2050,9 +1813,7 @@ def season_context_features__average_rank_fraction(
     available = [team for team in members if team in values]
     if not available:
         return {team: None for team in members}
-    ordered = sorted(
-        available, key=lambda team: (-values[team][0], -values[team][1], team)
-    )
+    ordered = sorted(available, key=lambda team: (-values[team][0], -values[team][1], team))
     denominator = max(len(ordered) - 1, 1)
     result: dict[str, float | None] = {team: None for team in members}
     index = 0
@@ -2066,6 +1827,7 @@ def season_context_features__average_rank_fraction(
             result[team] = float(fraction)
         index = end
     return result
+
 
 def season_context_features__standings_snapshots(
     schedules: season_context_features_pl.DataFrame,
@@ -2085,35 +1847,18 @@ def season_context_features__standings_snapshots(
         ),
         label="schedules",
     )
-    season_context_features__require_columns(
-        teams, ("team_abbr", "team_conf", "team_division"), label="teams"
-    )
-    metadata_rows = (
-        teams.select("team_abbr", "team_conf", "team_division").unique().to_dicts()
-    )
+    season_context_features__require_columns(teams, ("team_abbr", "team_conf", "team_division"), label="teams")
+    metadata_rows = teams.select("team_abbr", "team_conf", "team_division").unique().to_dicts()
     if len(metadata_rows) != teams.get_column("team_abbr").n_unique():
-        raise ValueError(
-            "teams metadata maps one abbreviation to multiple conference/division rows"
-        )
-    metadata = {
-        str(row["team_abbr"]): (str(row["team_conf"]), str(row["team_division"]))
-        for row in metadata_rows
-    }
+        raise ValueError("teams metadata maps one abbreviation to multiple conference/division rows")
+    metadata = {str(row["team_abbr"]): (str(row["team_conf"]), str(row["team_division"])) for row in metadata_rows}
     regular = schedules.filter(
         (season_context_features_pl.col("game_type") == "REG")
-        & season_context_features_pl.col("season").is_in(
-            [int(season) for season in seasons]
-        )
-    ).sort(
-        ["season", "week", "game_id"]
-        if "game_id" in schedules.columns
-        else ["season", "week"]
-    )
+        & season_context_features_pl.col("season").is_in([int(season) for season in seasons])
+    ).sort(["season", "week", "game_id"] if "game_id" in schedules.columns else ["season", "week"])
     output: list[dict[str, season_context_features_Any]] = []
     for season in sorted({int(value) for value in seasons}):
-        season_games = regular.filter(
-            season_context_features_pl.col("season") == season
-        )
+        season_games = regular.filter(season_context_features_pl.col("season") == season)
         scheduled_teams = sorted(
             set(season_games.get_column("home_team").drop_nulls().to_list())
             | set(season_games.get_column("away_team").drop_nulls().to_list())
@@ -2122,9 +1867,7 @@ def season_context_features__standings_snapshots(
             raise ValueError(f"schedules contain no regular-season games for {season}")
         missing_metadata = sorted(set(scheduled_teams).difference(metadata))
         if missing_metadata:
-            raise ValueError(
-                f"teams metadata is missing season {season} codes: {missing_metadata}"
-            )
+            raise ValueError(f"teams metadata is missing season {season} codes: {missing_metadata}")
         regular_weeks, games_per_team = season_context_features__season_rules(season)
         state = {
             team: {
@@ -2137,9 +1880,7 @@ def season_context_features__standings_snapshots(
             for team in scheduled_teams
         }
         games_by_week: dict[int, list[dict[str, season_context_features_Any]]] = {}
-        for row in season_games.select(
-            "week", "home_team", "away_team", "home_score", "away_score"
-        ).to_dicts():
+        for row in season_games.select("week", "home_team", "away_team", "home_score", "away_score").to_dicts():
             games_by_week.setdefault(int(row["week"]), []).append(row)
         for week in range(1, regular_weeks + 1):
             win_pct = {
@@ -2148,8 +1889,7 @@ def season_context_features__standings_snapshots(
                 if values["games"] > 0
             }
             point_diff = {
-                team: (values["points_for"] - values["points_against"])
-                / values["games"]
+                team: (values["points_for"] - values["points_against"]) / values["games"]
                 for team, values in state.items()
                 if values["games"] > 0
             }
@@ -2159,12 +1899,8 @@ def season_context_features__standings_snapshots(
             conference_cutoffs: dict[str, tuple[float, float]] = {}
             division_leaders: dict[str, float] = {}
             for conference in sorted({metadata[team][0] for team in scheduled_teams}):
-                members = [
-                    team for team in scheduled_teams if metadata[team][0] == conference
-                ]
-                conference_ranks.update(
-                    season_context_features__average_rank_fraction(rank_values, members)
-                )
+                members = [team for team in scheduled_teams if metadata[team][0] == conference]
+                conference_ranks.update(season_context_features__average_rank_fraction(rank_values, members))
                 ordered = sorted(
                     [team for team in members if team in rank_values],
                     key=lambda team: (
@@ -2180,12 +1916,8 @@ def season_context_features__standings_snapshots(
                         state[cutoff]["wins"],
                     )
             for division in sorted({metadata[team][1] for team in scheduled_teams}):
-                members = [
-                    team for team in scheduled_teams if metadata[team][1] == division
-                ]
-                division_ranks.update(
-                    season_context_features__average_rank_fraction(rank_values, members)
-                )
+                members = [team for team in scheduled_teams if metadata[team][1] == division]
+                division_ranks.update(season_context_features__average_rank_fraction(rank_values, members))
                 observed = [win_pct[team] for team in members if team in win_pct]
                 if observed:
                     division_leaders[division] = max(observed)
@@ -2243,9 +1975,7 @@ def season_context_features__standings_snapshots(
         season_context_features_pl.col("season").cast(season_context_features_pl.Int64),
         season_context_features_pl.col("week").cast(season_context_features_pl.Int64),
         *[
-            season_context_features_pl.col(column).cast(
-                season_context_features_pl.Float64
-            )
+            season_context_features_pl.col(column).cast(season_context_features_pl.Float64)
             for column in season_context_features__SNAPSHOT_FIELDS
         ],
     )
@@ -2263,41 +1993,23 @@ def season_context_features_build_season_context_features(
         label="base_rows",
     )
     if base_rows.select(
-        season_context_features_pl.struct(season_context_features__BASE_KEYS)
-        .is_duplicated()
-        .any()
+        season_context_features_pl.struct(season_context_features__BASE_KEYS).is_duplicated().any()
     ).item():
         raise ValueError("base_rows must have exactly one row per game_id/team")
-    existing = sorted(
-        set(season_context_features_SEASON_CONTEXT_FEATURE_COLUMNS).intersection(
-            base_rows.columns
-        )
-    )
+    existing = sorted(set(season_context_features_SEASON_CONTEXT_FEATURE_COLUMNS).intersection(base_rows.columns))
     if existing:
         raise ValueError(f"season-context columns already exist: {existing}")
-    seasons = [
-        int(value) for value in base_rows.get_column("season").unique().to_list()
-    ]
+    seasons = [int(value) for value in base_rows.get_column("season").unique().to_list()]
     snapshots = season_context_features__standings_snapshots(schedules, teams, seasons)
     working = base_rows.with_row_index("_season_context_row_order").with_columns(
-        season_context_features_pl.col("season")
-        .cast(season_context_features_pl.Int64)
-        .alias("_season_context_season"),
-        season_context_features_pl.col("week")
-        .cast(season_context_features_pl.Int64)
-        .alias("_season_context_week"),
+        season_context_features_pl.col("season").cast(season_context_features_pl.Int64).alias("_season_context_season"),
+        season_context_features_pl.col("week").cast(season_context_features_pl.Int64).alias("_season_context_week"),
     )
     team_snapshot = snapshots.rename(
-        {
-            column: f"_season_context_team_{column}"
-            for column in season_context_features__SNAPSHOT_FIELDS
-        }
+        {column: f"_season_context_team_{column}" for column in season_context_features__SNAPSHOT_FIELDS}
     ).rename({"standing_team": "_season_context_team"})
     opponent_snapshot = snapshots.rename(
-        {
-            column: f"_season_context_opponent_{column}"
-            for column in season_context_features__SNAPSHOT_FIELDS
-        }
+        {column: f"_season_context_opponent_{column}" for column in season_context_features__SNAPSHOT_FIELDS}
     ).rename({"standing_team": "_season_context_opponent"})
     rows = working.join(
         team_snapshot,
@@ -2318,115 +2030,87 @@ def season_context_features_build_season_context_features(
         rows.get_column("_season_context_team_games_played").null_count()
         or rows.get_column("_season_context_opponent_games_played").null_count()
     ):
-        raise ValueError(
-            "base rows contain season/week/team values absent from standings snapshots"
-        )
+        raise ValueError("base rows contain season/week/team values absent from standings snapshots")
     regular_week_denominator = (
-        season_context_features_pl.when(
-            season_context_features_pl.col("_season_context_season") <= 2020
-        )
+        season_context_features_pl.when(season_context_features_pl.col("_season_context_season") <= 2020)
         .then(season_context_features_pl.lit(16.0))
         .otherwise(season_context_features_pl.lit(17.0))
     )
     rows = rows.with_columns(
         (
-            (season_context_features_pl.col("_season_context_week") - 1).cast(
-                season_context_features_pl.Float64
-            )
+            (season_context_features_pl.col("_season_context_week") - 1).cast(season_context_features_pl.Float64)
             / regular_week_denominator
         ).alias("season_context_week_fraction"),
-        season_context_features_pl.col("_season_context_team_games_played").alias(
-            "season_context_team_games_played"
-        ),
+        season_context_features_pl.col("_season_context_team_games_played").alias("season_context_team_games_played"),
         season_context_features_pl.col("_season_context_team_games_remaining").alias(
             "season_context_team_games_remaining"
         ),
-        season_context_features_pl.col("_season_context_team_win_pct").alias(
-            "season_context_team_win_pct"
-        ),
-        season_context_features_pl.col("_season_context_opponent_win_pct").alias(
-            "season_context_opponent_win_pct"
-        ),
+        season_context_features_pl.col("_season_context_team_win_pct").alias("season_context_team_win_pct"),
+        season_context_features_pl.col("_season_context_opponent_win_pct").alias("season_context_opponent_win_pct"),
         (
             season_context_features_pl.col("_season_context_team_win_pct")
             - season_context_features_pl.col("_season_context_opponent_win_pct")
         ).alias("season_context_win_pct_delta"),
-        season_context_features_pl.col(
-            "_season_context_team_point_diff_per_game"
-        ).alias("season_context_team_point_diff_per_game"),
-        season_context_features_pl.col(
-            "_season_context_opponent_point_diff_per_game"
-        ).alias("season_context_opponent_point_diff_per_game"),
+        season_context_features_pl.col("_season_context_team_point_diff_per_game").alias(
+            "season_context_team_point_diff_per_game"
+        ),
+        season_context_features_pl.col("_season_context_opponent_point_diff_per_game").alias(
+            "season_context_opponent_point_diff_per_game"
+        ),
         (
             season_context_features_pl.col("_season_context_team_point_diff_per_game")
-            - season_context_features_pl.col(
-                "_season_context_opponent_point_diff_per_game"
-            )
+            - season_context_features_pl.col("_season_context_opponent_point_diff_per_game")
         ).alias("season_context_point_diff_per_game_delta"),
-        season_context_features_pl.col(
-            "_season_context_team_conference_rank_fraction"
-        ).alias("season_context_team_conference_rank_fraction"),
-        season_context_features_pl.col(
-            "_season_context_opponent_conference_rank_fraction"
-        ).alias("season_context_opponent_conference_rank_fraction"),
+        season_context_features_pl.col("_season_context_team_conference_rank_fraction").alias(
+            "season_context_team_conference_rank_fraction"
+        ),
+        season_context_features_pl.col("_season_context_opponent_conference_rank_fraction").alias(
+            "season_context_opponent_conference_rank_fraction"
+        ),
         (
-            season_context_features_pl.col(
-                "_season_context_team_conference_rank_fraction"
-            )
-            - season_context_features_pl.col(
-                "_season_context_opponent_conference_rank_fraction"
-            )
+            season_context_features_pl.col("_season_context_team_conference_rank_fraction")
+            - season_context_features_pl.col("_season_context_opponent_conference_rank_fraction")
         ).alias("season_context_conference_rank_fraction_delta"),
-        season_context_features_pl.col(
-            "_season_context_team_division_rank_fraction"
-        ).alias("season_context_team_division_rank_fraction"),
-        season_context_features_pl.col(
-            "_season_context_opponent_division_rank_fraction"
-        ).alias("season_context_opponent_division_rank_fraction"),
+        season_context_features_pl.col("_season_context_team_division_rank_fraction").alias(
+            "season_context_team_division_rank_fraction"
+        ),
+        season_context_features_pl.col("_season_context_opponent_division_rank_fraction").alias(
+            "season_context_opponent_division_rank_fraction"
+        ),
         (
-            season_context_features_pl.col(
-                "_season_context_team_division_rank_fraction"
-            )
-            - season_context_features_pl.col(
-                "_season_context_opponent_division_rank_fraction"
-            )
+            season_context_features_pl.col("_season_context_team_division_rank_fraction")
+            - season_context_features_pl.col("_season_context_opponent_division_rank_fraction")
         ).alias("season_context_division_rank_fraction_delta"),
-        season_context_features_pl.col(
-            "_season_context_team_gap_to_conference_7th"
-        ).alias("season_context_team_gap_to_conference_7th"),
-        season_context_features_pl.col(
-            "_season_context_opponent_gap_to_conference_7th"
-        ).alias("season_context_opponent_gap_to_conference_7th"),
-        season_context_features_pl.col(
-            "_season_context_team_gap_to_division_leader"
-        ).alias("season_context_team_gap_to_division_leader"),
-        season_context_features_pl.col(
-            "_season_context_opponent_gap_to_division_leader"
-        ).alias("season_context_opponent_gap_to_division_leader"),
-        season_context_features_pl.col(
-            "_season_context_team_max_wins_over_conference_7th"
-        ).alias("season_context_team_max_wins_over_conference_7th"),
-        season_context_features_pl.col(
-            "_season_context_opponent_max_wins_over_conference_7th"
-        ).alias("season_context_opponent_max_wins_over_conference_7th"),
+        season_context_features_pl.col("_season_context_team_gap_to_conference_7th").alias(
+            "season_context_team_gap_to_conference_7th"
+        ),
+        season_context_features_pl.col("_season_context_opponent_gap_to_conference_7th").alias(
+            "season_context_opponent_gap_to_conference_7th"
+        ),
+        season_context_features_pl.col("_season_context_team_gap_to_division_leader").alias(
+            "season_context_team_gap_to_division_leader"
+        ),
+        season_context_features_pl.col("_season_context_opponent_gap_to_division_leader").alias(
+            "season_context_opponent_gap_to_division_leader"
+        ),
+        season_context_features_pl.col("_season_context_team_max_wins_over_conference_7th").alias(
+            "season_context_team_max_wins_over_conference_7th"
+        ),
+        season_context_features_pl.col("_season_context_opponent_max_wins_over_conference_7th").alias(
+            "season_context_opponent_max_wins_over_conference_7th"
+        ),
     )
     output = rows.sort("_season_context_row_order").select(
         *base_rows.columns, *season_context_features_SEASON_CONTEXT_FEATURE_COLUMNS
     )
-    if output.height != base_rows.height or not output.select(base_rows.columns).equals(
-        base_rows
-    ):
-        raise RuntimeError(
-            "season-context builder changed source rows or existing feature values"
-        )
+    if output.height != base_rows.height or not output.select(base_rows.columns).equals(base_rows):
+        raise RuntimeError("season-context builder changed source rows or existing feature values")
     if any(
-        (
-            not output.schema[column].is_numeric()
-            for column in season_context_features_SEASON_CONTEXT_FEATURE_COLUMNS
-        )
+        (not output.schema[column].is_numeric() for column in season_context_features_SEASON_CONTEXT_FEATURE_COLUMNS)
     ):
         raise RuntimeError("season-context features must all be numeric")
     return output
+
 
 feature_sets_BASE_FEATURE_SET = "qb_offense_v0"
 
@@ -2465,19 +2149,15 @@ def feature_sets_available_feature_sets() -> tuple[str, ...]:
 
 
 def feature_sets_base_feature_columns(config: data_DataConfig) -> list[str]:
-    columns = features_qb_feature_columns(
-        config.qb_rolling_windows
-    ) + offense_features_offense_feature_columns(config.offense_rolling_windows)
+    columns = features_qb_feature_columns(config.qb_rolling_windows) + offense_features_offense_feature_columns(
+        config.offense_rolling_windows
+    )
     if len(columns) != 47 or len(columns) != len(set(columns)):
-        raise ValueError(
-            f"qb_offense_v0 must contain 47 unique features, got {len(columns)}"
-        )
+        raise ValueError(f"qb_offense_v0 must contain 47 unique features, got {len(columns)}")
     return columns
 
 
-def feature_sets_feature_group_columns(
-    config: data_DataConfig, group: str
-) -> list[str]:
+def feature_sets_feature_group_columns(config: data_DataConfig, group: str) -> list[str]:
     if group == "defense":
         return defense_features_defense_feature_columns(config.defense_rolling_windows)
     if group == "context":
@@ -2497,9 +2177,7 @@ def feature_sets_feature_group_columns(
     raise ValueError(f"Unknown feature group: {group}")
 
 
-def feature_sets_feature_columns_for_set(
-    config: data_DataConfig, feature_set: str
-) -> list[str]:
+def feature_sets_feature_columns_for_set(config: data_DataConfig, feature_set: str) -> list[str]:
     try:
         groups = feature_sets_FEATURE_SET_GROUPS[feature_set]
     except KeyError as error:
@@ -2512,6 +2190,7 @@ def feature_sets_feature_columns_for_set(
     if len(columns) != len(set(columns)):
         raise ValueError(f"Feature set {feature_set!r} contains duplicate columns")
     return columns
+
 
 import json as live_features_json
 
@@ -2689,9 +2368,7 @@ def live_features_live_feature_columns(
         "boxscore": live_features_LIVE_BOXSCORE_FEATURE_COLUMNS,
         "playstats": live_features_LIVE_PLAYSTATS_FEATURE_COLUMNS,
     }.get(live_feature_group, live_features_LIVE_FEATURE_COLUMNS)
-    columns = feature_sets_feature_columns_for_set(
-        data_config, live_config.pregame_feature_set
-    ) + list(live_columns)
+    columns = feature_sets_feature_columns_for_set(data_config, live_config.pregame_feature_set) + list(live_columns)
     if live_feature_group in {"usage", "opponent", "tempo", "drive_receiver"}:
         columns.extend(live_features_LIVE_USAGE_FEATURE_COLUMNS)
         if live_feature_group == "opponent":
@@ -2720,14 +2397,10 @@ def live_features_live_feature_columns(
 def live_features__download_live_pbp(seasons: list[int]) -> live_features_pl.DataFrame:
     frames = []
     for season in seasons:
-        frame = live_features_nfl.load_pbp([season]).select(
-            *live_features_LIVE_PBP_COLUMNS
-        )
+        frame = live_features_nfl.load_pbp([season]).select(*live_features_LIVE_PBP_COLUMNS)
         frames.append(frame)
         print(
-            live_features_json.dumps(
-                {"downloaded_live_pbp_season": season, "rows": frame.height}
-            ),
+            live_features_json.dumps({"downloaded_live_pbp_season": season, "rows": frame.height}),
             flush=True,
         )
     return live_features_pl.concat(frames, how="diagonal_relaxed")
@@ -2741,9 +2414,7 @@ def live_features_load_live_pbp(
     if live_config.pbp_path.exists() and (not refresh):
         return live_features_pl.read_parquet(live_config.pbp_path)
     live_config.pbp_path.parent.mkdir(parents=True, exist_ok=True)
-    seasons = list(
-        range(data_config.first_eligible_season, data_config.test_season + 1)
-    )
+    seasons = list(range(data_config.first_eligible_season, data_config.test_season + 1))
     frame = live_features__download_live_pbp(seasons)
     frame.write_parquet(live_config.pbp_path)
     return frame
@@ -2783,9 +2454,7 @@ def live_features__timestamped_plays(
     )
 
 
-def live_features__anchor_rows(
-    plays: live_features_pl.DataFrame, anchor_quarter: int
-) -> live_features_pl.DataFrame:
+def live_features__anchor_rows(plays: live_features_pl.DataFrame, anchor_quarter: int) -> live_features_pl.DataFrame:
     return (
         plays.filter(live_features_pl.col("qtr") == anchor_quarter)
         .sort(["game_id", "_play_timestamp_utc", "play_id"])
@@ -2802,82 +2471,47 @@ def live_features__qb_aggregates(
 ) -> live_features_pl.DataFrame:
     return (
         plays.filter(live_features_pl.col("passer_player_id").is_not_null())
-        .group_by(
-            "game_id", live_features_pl.col("posteam").alias("team"), "passer_player_id"
-        )
+        .group_by("game_id", live_features_pl.col("posteam").alias("team"), "passer_player_id")
         .agg(
-            live_features_pl.col("pass_attempt")
-            .fill_null(0)
-            .sum()
-            .alias("live_qb_attempts"),
-            live_features_pl.col("complete_pass")
-            .fill_null(0)
-            .sum()
-            .alias("live_qb_completions"),
-            live_features_pl.col("passing_yards")
-            .fill_null(0)
-            .sum()
-            .alias("live_qb_passing_yards"),
-            live_features_pl.col("qb_dropback")
-            .fill_null(0)
-            .sum()
-            .alias("live_qb_dropbacks"),
+            live_features_pl.col("pass_attempt").fill_null(0).sum().alias("live_qb_attempts"),
+            live_features_pl.col("complete_pass").fill_null(0).sum().alias("live_qb_completions"),
+            live_features_pl.col("passing_yards").fill_null(0).sum().alias("live_qb_passing_yards"),
+            live_features_pl.col("qb_dropback").fill_null(0).sum().alias("live_qb_dropbacks"),
             live_features_pl.col("sack").fill_null(0).sum().alias("_live_qb_sacks"),
             live_features_pl.col("qb_hit").fill_null(0).sum().alias("_live_qb_hits"),
             live_features_pl.col("epa")
             .filter(live_features_pl.col("qb_dropback") == 1)
             .mean()
             .alias("live_qb_epa_per_dropback"),
-            live_features_pl.col("cpoe")
-            .filter(live_features_pl.col("pass_attempt") == 1)
-            .mean()
-            .alias("live_qb_cpoe"),
+            live_features_pl.col("cpoe").filter(live_features_pl.col("pass_attempt") == 1).mean().alias("live_qb_cpoe"),
             live_features_pl.col("air_yards")
             .filter(live_features_pl.col("pass_attempt") == 1)
             .mean()
             .alias("live_qb_air_yards_per_attempt"),
-            (
-                (live_features_pl.col("complete_pass") == 1)
-                & (live_features_pl.col("passing_yards") >= 20)
-            )
+            ((live_features_pl.col("complete_pass") == 1) & (live_features_pl.col("passing_yards") >= 20))
             .cast(live_features_pl.Float64)
             .sum()
             .alias("_live_qb_explosive_completions"),
-            live_features_pl.col("interception")
-            .fill_null(0)
-            .sum()
-            .alias("live_qb_interceptions"),
+            live_features_pl.col("interception").fill_null(0).sum().alias("live_qb_interceptions"),
         )
         .with_columns(
             (live_features_pl.col("live_qb_dropbacks") > 0)
             .cast(live_features_pl.Float64)
             .alias("live_qb_has_dropback"),
             live_features_pl.when(live_features_pl.col("live_qb_attempts") > 0)
-            .then(
-                live_features_pl.col("live_qb_passing_yards")
-                / live_features_pl.col("live_qb_attempts")
-            )
+            .then(live_features_pl.col("live_qb_passing_yards") / live_features_pl.col("live_qb_attempts"))
             .otherwise(0.0)
             .alias("live_qb_ypa"),
             live_features_pl.when(live_features_pl.col("live_qb_dropbacks") > 0)
-            .then(
-                live_features_pl.col("_live_qb_sacks")
-                / live_features_pl.col("live_qb_dropbacks")
-            )
+            .then(live_features_pl.col("_live_qb_sacks") / live_features_pl.col("live_qb_dropbacks"))
             .otherwise(0.0)
             .alias("live_qb_sack_rate"),
             live_features_pl.when(live_features_pl.col("live_qb_dropbacks") > 0)
-            .then(
-                live_features_pl.col("_live_qb_hits")
-                / live_features_pl.col("live_qb_dropbacks")
-            )
+            .then(live_features_pl.col("_live_qb_hits") / live_features_pl.col("live_qb_dropbacks"))
             .otherwise(0.0)
             .alias("live_qb_hit_rate"),
             live_features_pl.when(live_features_pl.col("live_qb_attempts") > 0)
-            .then(
-                live_features_pl.col("_live_qb_explosive_completions")
-                / live_features_pl.col("live_qb_attempts")
-            )
+            .then(live_features_pl.col("_live_qb_explosive_completions") / live_features_pl.col("live_qb_attempts"))
             .otherwise(0.0)
             .alias("live_qb_explosive_complete_rate"),
         )
@@ -2896,29 +2530,18 @@ def live_features__offense_aggregates(
     return (
         plays.group_by("game_id", live_features_pl.col("posteam").alias("team"))
         .agg(
-            eligible_play.cast(live_features_pl.Float64)
-            .sum()
-            .alias("live_offense_plays"),
+            eligible_play.cast(live_features_pl.Float64).sum().alias("live_offense_plays"),
             live_features_pl.col("qb_dropback")
             .fill_null(0)
             .filter(eligible_play)
             .sum()
             .alias("_live_offense_dropbacks"),
-            live_features_pl.col("epa")
-            .filter(eligible_play)
-            .mean()
-            .alias("live_offense_epa_per_play"),
-            live_features_pl.col("success")
-            .filter(eligible_play)
-            .mean()
-            .alias("live_offense_success_rate"),
+            live_features_pl.col("epa").filter(eligible_play).mean().alias("live_offense_epa_per_play"),
+            live_features_pl.col("success").filter(eligible_play).mean().alias("live_offense_success_rate"),
         )
         .with_columns(
             live_features_pl.when(live_features_pl.col("live_offense_plays") > 0)
-            .then(
-                live_features_pl.col("_live_offense_dropbacks")
-                / live_features_pl.col("live_offense_plays")
-            )
+            .then(live_features_pl.col("_live_offense_dropbacks") / live_features_pl.col("live_offense_plays"))
             .otherwise(0.0)
             .alias("live_offense_pass_rate")
         )
@@ -2933,18 +2556,9 @@ def live_features__game_state(
         plays.sort(["game_id", "_play_timestamp_utc", "play_id"])
         .group_by("game_id", maintain_order=True)
         .agg(
-            live_features_pl.col("total_home_score")
-            .drop_nulls()
-            .last()
-            .alias("_live_home_score"),
-            live_features_pl.col("total_away_score")
-            .drop_nulls()
-            .last()
-            .alias("_live_away_score"),
-            live_features_pl.col("game_seconds_remaining")
-            .drop_nulls()
-            .last()
-            .alias("live_game_seconds_remaining"),
+            live_features_pl.col("total_home_score").drop_nulls().last().alias("_live_home_score"),
+            live_features_pl.col("total_away_score").drop_nulls().last().alias("_live_away_score"),
+            live_features_pl.col("game_seconds_remaining").drop_nulls().last().alias("live_game_seconds_remaining"),
         )
     )
 
@@ -2955,17 +2569,14 @@ def live_features__usage_aggregates(
     """Observable passer replacement/workload signals, not postgame injury labels."""
     passer_plays = (
         plays.filter(
-            live_features_pl.col("passer_player_id").is_not_null()
-            & (live_features_pl.col("qb_dropback") == 1)
+            live_features_pl.col("passer_player_id").is_not_null() & (live_features_pl.col("qb_dropback") == 1)
         )
         .rename({"posteam": "team"})
         .sort(["game_id", "team", "_play_timestamp_utc", "play_id"])
     )
     team_state = passer_plays.group_by("game_id", "team", maintain_order=True).agg(
         live_features_pl.col("passer_player_id").last().alias("_latest_passer_id"),
-        (live_features_pl.col("qtr") == anchor_quarter)
-        .sum()
-        .alias("_team_anchor_quarter_pass_plays"),
+        (live_features_pl.col("qtr") == anchor_quarter).sum().alias("_team_anchor_quarter_pass_plays"),
         live_features_pl.len().clip(upper_bound=10).alias("_team_recent_pass_plays"),
     )
     recent = (
@@ -2981,23 +2592,16 @@ def live_features__usage_aggregates(
             .cast(live_features_pl.Float64)
             .sum()
             .alias("live_qb_anchor_quarter_pass_plays"),
-            live_features_pl.col("_play_timestamp_utc")
-            .max()
-            .alias("_qb_last_pass_play_utc"),
+            live_features_pl.col("_play_timestamp_utc").max().alias("_qb_last_pass_play_utc"),
             live_features_pl.col("live_anchor_utc").first(),
         )
         .join(team_state, on=["game_id", "team"], how="left")
         .join(recent, on=["game_id", "team", "passer_player_id"], how="left")
         .with_columns(
-            (
-                live_features_pl.col("passer_player_id")
-                == live_features_pl.col("_latest_passer_id")
-            )
+            (live_features_pl.col("passer_player_id") == live_features_pl.col("_latest_passer_id"))
             .cast(live_features_pl.Float64)
             .alias("live_qb_is_latest_team_passer"),
-            live_features_pl.when(
-                live_features_pl.col("_team_anchor_quarter_pass_plays") > 0
-            )
+            live_features_pl.when(live_features_pl.col("_team_anchor_quarter_pass_plays") > 0)
             .then(
                 live_features_pl.col("live_qb_anchor_quarter_pass_plays")
                 / live_features_pl.col("_team_anchor_quarter_pass_plays")
@@ -3008,10 +2612,7 @@ def live_features__usage_aggregates(
                 live_features_pl.col("_qb_recent_pass_plays").fill_null(0)
                 / live_features_pl.col("_team_recent_pass_plays")
             ).alias("live_qb_recent_pass_play_share"),
-            (
-                live_features_pl.col("live_anchor_utc")
-                - live_features_pl.col("_qb_last_pass_play_utc")
-            )
+            (live_features_pl.col("live_anchor_utc") - live_features_pl.col("_qb_last_pass_play_utc"))
             .dt.total_seconds()
             .cast(live_features_pl.Float64)
             .alias("live_qb_seconds_since_last_pass_play"),
@@ -3045,19 +2646,14 @@ def live_features_build_live_rows(
     missing = sorted(required_pregame.difference(pregame_rows.columns))
     if missing:
         raise ValueError(f"pregame rows are missing required columns: {missing}")
-    plays = live_features__timestamped_plays(
-        pbp, data_config.season_type, live_config.anchor_quarter
-    )
+    plays = live_features__timestamped_plays(pbp, data_config.season_type, live_config.anchor_quarter)
     anchors = live_features__anchor_rows(plays, live_config.anchor_quarter)
     bounded = plays.join(anchors, on="game_id", how="inner").filter(
-        live_features_pl.col("_play_timestamp_utc")
-        <= live_features_pl.col("live_anchor_utc")
+        live_features_pl.col("_play_timestamp_utc") <= live_features_pl.col("live_anchor_utc")
     )
     rows = (
         pregame_rows.filter(
-            live_features_pl.col("season").is_between(
-                data_config.first_eligible_season, data_config.test_season
-            )
+            live_features_pl.col("season").is_between(data_config.first_eligible_season, data_config.test_season)
             & live_features_pl.col("actual_qb_id").is_not_null()
             & live_features_pl.col("official_passing_yards").is_not_null()
         )
@@ -3095,14 +2691,12 @@ def live_features_build_live_rows(
             ).alias("live_decision_utc"),
         )
         .with_columns(
-            (
-                live_features_pl.col("live_team_score")
-                - live_features_pl.col("live_opponent_score")
-            ).alias("live_score_differential"),
-            (
-                live_features_pl.col("live_team_score")
-                + live_features_pl.col("live_opponent_score")
-            ).alias("live_game_total"),
+            (live_features_pl.col("live_team_score") - live_features_pl.col("live_opponent_score")).alias(
+                "live_score_differential"
+            ),
+            (live_features_pl.col("live_team_score") + live_features_pl.col("live_opponent_score")).alias(
+                "live_game_total"
+            ),
         )
         .with_columns(
             (live_features_pl.col("live_score_differential") > 0)
@@ -3112,23 +2706,18 @@ def live_features_build_live_rows(
                 live_features_pl.col("official_passing_yards")
                 - live_features_pl.col("live_qb_passing_yards").fill_null(0)
             ).alias(live_features_LIVE_TARGET_COLUMN),
-            live_features_pl.col("live_anchor_utc")
-            .is_not_null()
-            .alias("live_evaluation_eligible"),
+            live_features_pl.col("live_anchor_utc").is_not_null().alias("live_evaluation_eligible"),
         )
         .drop("_live_home_score", "_live_away_score")
     )
     rows = rows.with_columns(
         [
-            live_features_pl.col(column)
-            .cast(live_features_pl.Float64)
-            .fill_null(0.0)
-            .fill_nan(0.0)
-            for column in live_features_LIVE_FEATURE_COLUMNS
-            + live_features_LIVE_USAGE_FEATURE_COLUMNS
+            live_features_pl.col(column).cast(live_features_pl.Float64).fill_null(0.0).fill_nan(0.0)
+            for column in live_features_LIVE_FEATURE_COLUMNS + live_features_LIVE_USAGE_FEATURE_COLUMNS
         ]
     )
     return rows.sort(["season", "week", "game_id", "team"])
+
 
 import polars as live_flow_features_pl
 
@@ -3159,9 +2748,7 @@ def live_flow_features_build_live_flow_features(
 ) -> live_flow_features_pl.DataFrame:
     """Only consume plays at/before each already-frozen anchor; never targets."""
     if live_config.anchor_quarter != 2:
-        raise ValueError(
-            "quarter-flow features are defined only for the halftime protocol"
-        )
+        raise ValueError("quarter-flow features are defined only for the halftime protocol")
     required = {
         *live_flow_features_KEYS,
         "opponent_team",
@@ -3169,13 +2756,9 @@ def live_flow_features_build_live_flow_features(
         "live_anchor_utc",
     }
     if required - set(rows.columns):
-        raise ValueError(
-            f"missing frozen row fields: {sorted(required - set(rows.columns))}"
-        )
+        raise ValueError(f"missing frozen row fields: {sorted(required - set(rows.columns))}")
     if set(live_flow_features_FLOW_COLUMNS) & set(rows.columns):
-        raise ValueError(
-            "flow columns already exist; preserve the original source table"
-        )
+        raise ValueError("flow columns already exist; preserve the original source table")
     if rows.select(live_flow_features_KEYS).is_duplicated().any():
         raise ValueError("flow source requires unique QB-game rows")
     anchors = rows.select("game_id", "live_anchor_utc").unique()
@@ -3184,10 +2767,7 @@ def live_flow_features_build_live_flow_features(
     plays = (
         live_features__timestamped_plays(pbp, season_type, 2)
         .join(anchors, on="game_id", how="inner")
-        .filter(
-            live_flow_features_pl.col("_play_timestamp_utc")
-            <= live_flow_features_pl.col("live_anchor_utc")
-        )
+        .filter(live_flow_features_pl.col("_play_timestamp_utc") <= live_flow_features_pl.col("live_anchor_utc"))
         .filter(live_flow_features_pl.col("posteam").is_not_null())
         .filter(
             live_flow_features_pl.col("play_type").is_in(["pass", "run"])
@@ -3197,37 +2777,19 @@ def live_flow_features_build_live_flow_features(
         .rename({"posteam": "team"})
     )
     q2 = live_flow_features_pl.col("qtr") == 2
-    valid_clock = (
-        live_flow_features_pl.col("quarter_seconds_remaining")
-        .is_between(0, 900)
-        .fill_null(False)
-    )
-    two_minute = (
-        q2
-        & valid_clock
-        & (live_flow_features_pl.col("quarter_seconds_remaining") <= 120)
-    )
-    before_two_minute = ~q2 | valid_clock & (
-        live_flow_features_pl.col("quarter_seconds_remaining") > 120
-    )
+    valid_clock = live_flow_features_pl.col("quarter_seconds_remaining").is_between(0, 900).fill_null(False)
+    two_minute = q2 & valid_clock & (live_flow_features_pl.col("quarter_seconds_remaining") <= 120)
+    before_two_minute = ~q2 | valid_clock & (live_flow_features_pl.col("quarter_seconds_remaining") > 120)
     dropback = live_flow_features_pl.col("qb_dropback").fill_null(0)
     team = (
         plays.group_by(live_flow_features_KEYS)
         .agg(
-            live_flow_features_pl.len()
-            .cast(live_flow_features_pl.Float64)
-            .alias("_plays"),
+            live_flow_features_pl.len().cast(live_flow_features_pl.Float64).alias("_plays"),
             dropback.mean().alias("_pass_rate"),
             live_flow_features_pl.col("epa").mean().alias("_epa"),
             live_flow_features_pl.col("success").mean().alias("_success"),
-            live_flow_features_pl.col("passing_yards")
-            .fill_null(0)
-            .sum()
-            .alias("_passing_yards"),
-            live_flow_features_pl.col("interception")
-            .fill_null(0)
-            .sum()
-            .alias("_interceptions"),
+            live_flow_features_pl.col("passing_yards").fill_null(0).sum().alias("_passing_yards"),
+            live_flow_features_pl.col("interception").fill_null(0).sum().alias("_interceptions"),
             q2.cast(live_flow_features_pl.Float64).sum().alias("_q2_plays"),
             dropback.filter(q2).mean().alias("live_offense_q2_pass_rate"),
             dropback.filter(~q2).mean().alias("_q1_pass_rate"),
@@ -3237,10 +2799,9 @@ def live_flow_features_build_live_flow_features(
                 live_flow_features_pl.col("_q2_plays"),
                 live_flow_features_pl.col("_plays"),
             ).alias("live_offense_q2_play_share"),
-            (
-                live_flow_features_pl.col("live_offense_q2_pass_rate")
-                - live_flow_features_pl.col("_q1_pass_rate")
-            ).alias("live_offense_q2_minus_q1_pass_rate"),
+            (live_flow_features_pl.col("live_offense_q2_pass_rate") - live_flow_features_pl.col("_q1_pass_rate")).alias(
+                "live_offense_q2_minus_q1_pass_rate"
+            ),
         )
     )
     opponent = team.select(
@@ -3250,35 +2811,20 @@ def live_flow_features_build_live_flow_features(
         live_flow_features_pl.col("_pass_rate").alias("live_opponent_pass_rate"),
         live_flow_features_pl.col("_epa").alias("live_opponent_epa_per_play"),
         live_flow_features_pl.col("_success").alias("live_opponent_success_rate"),
-        live_flow_features_pl.col("_passing_yards").alias(
-            "live_opponent_passing_yards"
-        ),
-        live_flow_features_pl.col("_interceptions").alias(
-            "live_opponent_interceptions"
-        ),
+        live_flow_features_pl.col("_passing_yards").alias("live_opponent_passing_yards"),
+        live_flow_features_pl.col("_interceptions").alias("live_opponent_interceptions"),
     )
     qb = (
-        plays.filter(
-            (dropback == 1)
-            & live_flow_features_pl.col("passer_player_id").is_not_null()
-        )
+        plays.filter((dropback == 1) & live_flow_features_pl.col("passer_player_id").is_not_null())
         .group_by(
             *live_flow_features_KEYS,
             live_flow_features_pl.col("passer_player_id").alias("actual_qb_id"),
         )
         .agg(
-            live_flow_features_pl.len()
-            .cast(live_flow_features_pl.Float64)
-            .alias("_qb_dropbacks"),
+            live_flow_features_pl.len().cast(live_flow_features_pl.Float64).alias("_qb_dropbacks"),
             q2.cast(live_flow_features_pl.Float64).sum().alias("_qb_q2_dropbacks"),
-            (q2 & ~valid_clock)
-            .cast(live_flow_features_pl.Float64)
-            .sum()
-            .alias("_qb_bad_q2_clock"),
-            two_minute.fill_null(False)
-            .cast(live_flow_features_pl.Float64)
-            .sum()
-            .alias("_qb_two_minute_dropbacks"),
+            (q2 & ~valid_clock).cast(live_flow_features_pl.Float64).sum().alias("_qb_bad_q2_clock"),
+            two_minute.fill_null(False).cast(live_flow_features_pl.Float64).sum().alias("_qb_two_minute_dropbacks"),
             live_flow_features_pl.col("passing_yards")
             .fill_null(0)
             .filter(q2)
@@ -3289,14 +2835,8 @@ def live_flow_features_build_live_flow_features(
             .filter(~q2)
             .mean()
             .alias("_qb_q1_yards_per_dropback"),
-            live_flow_features_pl.col("epa")
-            .filter(q2)
-            .mean()
-            .alias("live_qb_q2_epa_per_dropback"),
-            live_flow_features_pl.col("sack")
-            .filter(q2)
-            .mean()
-            .alias("live_qb_q2_sack_rate"),
+            live_flow_features_pl.col("epa").filter(q2).mean().alias("live_qb_q2_epa_per_dropback"),
+            live_flow_features_pl.col("sack").filter(q2).mean().alias("live_qb_q2_sack_rate"),
             live_flow_features_pl.col("passing_yards")
             .fill_null(0)
             .filter(before_two_minute)
@@ -3308,9 +2848,7 @@ def live_flow_features_build_live_flow_features(
                 live_flow_features_pl.col("live_qb_q2_yards_per_dropback")
                 - live_flow_features_pl.col("_qb_q1_yards_per_dropback")
             ).alias("live_qb_q2_minus_q1_yards_per_dropback"),
-            live_flow_features_pl.when(
-                live_flow_features_pl.col("_qb_bad_q2_clock") == 0
-            )
+            live_flow_features_pl.when(live_flow_features_pl.col("_qb_bad_q2_clock") == 0)
             .then(
                 live_flow_features__ratio(
                     live_flow_features_pl.col("_qb_two_minute_dropbacks"),
@@ -3319,38 +2857,22 @@ def live_flow_features_build_live_flow_features(
             )
             .otherwise(None)
             .alias("live_qb_two_minute_dropback_share"),
-            live_flow_features_pl.when(
-                live_flow_features_pl.col("_qb_bad_q2_clock") == 0
-            )
+            live_flow_features_pl.when(live_flow_features_pl.col("_qb_bad_q2_clock") == 0)
             .then(live_flow_features_pl.col("_qb_before_two_minute_ypdb"))
             .otherwise(None)
             .alias("live_qb_before_two_minute_yards_per_dropback"),
-            live_flow_features_pl.when(
-                live_flow_features_pl.col("_qb_q2_dropbacks") > 0
-            )
-            .then(
-                1.0
-                - live_flow_features_pl.col("_qb_bad_q2_clock")
-                / live_flow_features_pl.col("_qb_q2_dropbacks")
-            )
+            live_flow_features_pl.when(live_flow_features_pl.col("_qb_q2_dropbacks") > 0)
+            .then(1.0 - live_flow_features_pl.col("_qb_bad_q2_clock") / live_flow_features_pl.col("_qb_q2_dropbacks"))
             .otherwise(1.0)
             .alias("live_qb_two_minute_clock_coverage"),
         )
         .select(
             *live_flow_features_KEYS,
             "actual_qb_id",
-            *[
-                c
-                for c in live_features_LIVE_TEMPO_FEATURE_COLUMNS
-                if c.startswith("live_qb_")
-            ],
+            *[c for c in live_features_LIVE_TEMPO_FEATURE_COLUMNS if c.startswith("live_qb_")],
         )
     )
-    team_tempo = [
-        c
-        for c in live_features_LIVE_TEMPO_FEATURE_COLUMNS
-        if c.startswith("live_offense_")
-    ]
+    team_tempo = [c for c in live_features_LIVE_TEMPO_FEATURE_COLUMNS if c.startswith("live_offense_")]
     result = (
         rows.join(
             team.select(*live_flow_features_KEYS, "_plays", *team_tempo),
@@ -3366,10 +2888,9 @@ def live_flow_features_build_live_flow_features(
             validate="1:1",
         )
         .with_columns(
-            (
-                live_flow_features_pl.col("_plays")
-                + live_flow_features_pl.col("live_opponent_offense_plays")
-            ).alias("live_game_offense_plays")
+            (live_flow_features_pl.col("_plays") + live_flow_features_pl.col("live_opponent_offense_plays")).alias(
+                "live_game_offense_plays"
+            )
         )
         .with_columns(
             live_flow_features__ratio(
@@ -3379,9 +2900,7 @@ def live_flow_features_build_live_flow_features(
         )
         .with_columns(
             [
-                live_flow_features_pl.col(c)
-                .cast(live_flow_features_pl.Float64)
-                .fill_nan(None)
+                live_flow_features_pl.col(c).cast(live_flow_features_pl.Float64).fill_nan(None)
                 for c in live_flow_features_FLOW_COLUMNS
             ]
         )
@@ -3391,21 +2910,15 @@ def live_flow_features_build_live_flow_features(
         "live_offense_plays" in rows.columns
         and result.filter(
             live_flow_features_pl.col("live_anchor_utc").is_not_null()
-            & (
-                live_flow_features_pl.col("_plays").fill_null(0)
-                != live_flow_features_pl.col("live_offense_plays")
-            )
+            & (live_flow_features_pl.col("_plays").fill_null(0) != live_flow_features_pl.col("live_offense_plays"))
         ).height
     ):
-        raise ValueError(
-            "source halftime aggregates are stale; rebuild the base table before adding flow features"
-        )
+        raise ValueError("source halftime aggregates are stale; rebuild the base table before adding flow features")
     result = result.drop("_plays")
     if not result.select(rows.columns).equals(rows.sort(live_flow_features_KEYS)):
-        raise RuntimeError(
-            "flow join changed the source rows or existing feature values"
-        )
+        raise RuntimeError("flow join changed the source rows or existing feature values")
     return result
+
 
 import polars as live_q1_features_pl
 
@@ -3428,9 +2941,7 @@ def live_q1_features__normalized_timestamped_plays(
             .str.to_datetime(time_zone="UTC", strict=True)
             .alias("_play_timestamp_utc"),
             *[
-                live_q1_features_pl.when(
-                    live_q1_features_pl.col(column).is_in(["OAK", "LV"])
-                )
+                live_q1_features_pl.when(live_q1_features_pl.col(column).is_in(["OAK", "LV"]))
                 .then(
                     live_q1_features_pl.when(live_q1_features_pl.col("season") < 2020)
                     .then(live_q1_features_pl.lit("OAK"))
@@ -3454,24 +2965,14 @@ def live_q1_features_q1_boundaries(
         .sort(["game_id", "_play_timestamp_utc", "play_id"])
         .group_by("game_id", maintain_order=True)
         .agg(
-            live_q1_features_pl.col("_play_timestamp_utc")
-            .first()
-            .alias("live_anchor_utc"),
+            live_q1_features_pl.col("_play_timestamp_utc").first().alias("live_anchor_utc"),
             live_q1_features_pl.col("play_id").first().alias("live_anchor_play_id"),
-            live_q1_features_pl.col("game_seconds_remaining")
-            .first()
-            .alias("live_anchor_game_seconds_remaining"),
+            live_q1_features_pl.col("game_seconds_remaining").first().alias("live_anchor_game_seconds_remaining"),
         )
     )
-    invalid = anchors.filter(
-        ~live_q1_features_pl.col("live_anchor_game_seconds_remaining").is_between(
-            2400.0, 2700.0
-        )
-    )
+    invalid = anchors.filter(~live_q1_features_pl.col("live_anchor_game_seconds_remaining").is_between(2400.0, 2700.0))
     if invalid.height:
-        raise ValueError(
-            f"Q1 boundary clock is outside [2400, 2700]: {invalid.head(5).to_dicts()}"
-        )
+        raise ValueError(f"Q1 boundary clock is outside [2400, 2700]: {invalid.head(5).to_dicts()}")
     return anchors
 
 
@@ -3482,18 +2983,9 @@ def live_q1_features__q1_game_state(
         plays.sort(["game_id", "_play_timestamp_utc", "play_id"])
         .group_by("game_id", maintain_order=True)
         .agg(
-            live_q1_features_pl.col("total_home_score")
-            .drop_nulls()
-            .last()
-            .alias("_live_home_score"),
-            live_q1_features_pl.col("total_away_score")
-            .drop_nulls()
-            .last()
-            .alias("_live_away_score"),
-            live_q1_features_pl.col("game_seconds_remaining")
-            .drop_nulls()
-            .last()
-            .alias("live_game_seconds_remaining"),
+            live_q1_features_pl.col("total_home_score").drop_nulls().last().alias("_live_home_score"),
+            live_q1_features_pl.col("total_away_score").drop_nulls().last().alias("_live_away_score"),
+            live_q1_features_pl.col("game_seconds_remaining").drop_nulls().last().alias("live_game_seconds_remaining"),
         )
     )
 
@@ -3503,8 +2995,7 @@ def live_q1_features__q1_usage_aggregates(
 ) -> live_q1_features_pl.DataFrame:
     passer_plays = (
         plays.filter(
-            live_q1_features_pl.col("passer_player_id").is_not_null()
-            & (live_q1_features_pl.col("qb_dropback") == 1)
+            live_q1_features_pl.col("passer_player_id").is_not_null() & (live_q1_features_pl.col("qb_dropback") == 1)
         )
         .rename({"posteam": "team"})
         .sort(["game_id", "team", "_play_timestamp_utc", "play_id"])
@@ -3523,21 +3014,14 @@ def live_q1_features__q1_usage_aggregates(
     return (
         passer_plays.group_by("game_id", "team", "passer_player_id")
         .agg(
-            live_q1_features_pl.len()
-            .cast(live_q1_features_pl.Float64)
-            .alias("live_qb_anchor_quarter_pass_plays"),
-            live_q1_features_pl.col("_play_timestamp_utc")
-            .max()
-            .alias("_qb_last_pass_play_utc"),
+            live_q1_features_pl.len().cast(live_q1_features_pl.Float64).alias("live_qb_anchor_quarter_pass_plays"),
+            live_q1_features_pl.col("_play_timestamp_utc").max().alias("_qb_last_pass_play_utc"),
             live_q1_features_pl.col("live_anchor_utc").first(),
         )
         .join(team_state, on=["game_id", "team"], how="left")
         .join(recent, on=["game_id", "team", "passer_player_id"], how="left")
         .with_columns(
-            (
-                live_q1_features_pl.col("passer_player_id")
-                == live_q1_features_pl.col("_latest_passer_id")
-            )
+            (live_q1_features_pl.col("passer_player_id") == live_q1_features_pl.col("_latest_passer_id"))
             .cast(live_q1_features_pl.Float64)
             .alias("live_qb_is_latest_team_passer"),
             (
@@ -3548,10 +3032,7 @@ def live_q1_features__q1_usage_aggregates(
                 live_q1_features_pl.col("_qb_recent_pass_plays").fill_null(0)
                 / live_q1_features_pl.col("_team_recent_pass_plays")
             ).alias("live_qb_recent_pass_play_share"),
-            (
-                live_q1_features_pl.col("live_anchor_utc")
-                - live_q1_features_pl.col("_qb_last_pass_play_utc")
-            )
+            (live_q1_features_pl.col("live_anchor_utc") - live_q1_features_pl.col("_qb_last_pass_play_utc"))
             .dt.total_seconds()
             .cast(live_q1_features_pl.Float64)
             .alias("live_qb_seconds_since_last_pass_play"),
@@ -3602,28 +3083,18 @@ def live_q1_features_build_q1_rows(
     q1 = (
         plays.filter(live_q1_features_pl.col("qtr") == 1)
         .join(anchors, on="game_id", how="inner")
-        .filter(
-            live_q1_features_pl.col("_play_timestamp_utc")
-            < live_q1_features_pl.col("live_anchor_utc")
-        )
+        .filter(live_q1_features_pl.col("_play_timestamp_utc") < live_q1_features_pl.col("live_anchor_utc"))
     )
     missing_q1 = anchors.join(q1.select("game_id").unique(), on="game_id", how="anti")
     if missing_q1.height:
-        raise ValueError(
-            f"Q1 boundary has no preceding timestamped Q1 record: {missing_q1.head(5).to_dicts()}"
-        )
+        raise ValueError(f"Q1 boundary has no preceding timestamped Q1 record: {missing_q1.head(5).to_dicts()}")
     invalid_passer_time = q1.filter(
         live_q1_features_pl.col("passer_player_id").is_not_null()
-        & (
-            live_q1_features_pl.col("_play_timestamp_utc")
-            >= live_q1_features_pl.col("live_anchor_utc")
-        )
+        & (live_q1_features_pl.col("_play_timestamp_utc") >= live_q1_features_pl.col("live_anchor_utc"))
     )
     if invalid_passer_time.height:
         examples = invalid_passer_time.select("game_id", "play_id").head(5).to_dicts()
-        raise ValueError(
-            f"Q1 passer timestamp does not precede Q2 boundary: {examples}"
-        )
+        raise ValueError(f"Q1 passer timestamp does not precede Q2 boundary: {examples}")
     base = source_rows.select(live_q1_features__pregame_columns(source_rows))
     rows = (
         base.join(anchors, on="game_id", how="left")
@@ -3656,14 +3127,12 @@ def live_q1_features_build_q1_rows(
             ).alias("live_decision_utc"),
         )
         .with_columns(
-            (
-                live_q1_features_pl.col("live_team_score")
-                - live_q1_features_pl.col("live_opponent_score")
-            ).alias("live_score_differential"),
-            (
-                live_q1_features_pl.col("live_team_score")
-                + live_q1_features_pl.col("live_opponent_score")
-            ).alias("live_game_total"),
+            (live_q1_features_pl.col("live_team_score") - live_q1_features_pl.col("live_opponent_score")).alias(
+                "live_score_differential"
+            ),
+            (live_q1_features_pl.col("live_team_score") + live_q1_features_pl.col("live_opponent_score")).alias(
+                "live_game_total"
+            ),
         )
         .with_columns(
             (live_q1_features_pl.col("live_score_differential") > 0)
@@ -3673,24 +3142,19 @@ def live_q1_features_build_q1_rows(
                 live_q1_features_pl.col("official_passing_yards")
                 - live_q1_features_pl.col("live_qb_passing_yards").fill_null(0.0)
             ).alias(live_features_LIVE_TARGET_COLUMN),
-            live_q1_features_pl.col("live_anchor_utc")
-            .is_not_null()
-            .alias("live_evaluation_eligible"),
+            live_q1_features_pl.col("live_anchor_utc").is_not_null().alias("live_evaluation_eligible"),
         )
         .drop("_live_home_score", "_live_away_score")
         .with_columns(
             *[
-                live_q1_features_pl.col(column)
-                .cast(live_q1_features_pl.Float64)
-                .fill_null(0.0)
-                .fill_nan(0.0)
-                for column in live_features_LIVE_FEATURE_COLUMNS
-                + live_features_LIVE_USAGE_FEATURE_COLUMNS
+                live_q1_features_pl.col(column).cast(live_q1_features_pl.Float64).fill_null(0.0).fill_nan(0.0)
+                for column in live_features_LIVE_FEATURE_COLUMNS + live_features_LIVE_USAGE_FEATURE_COLUMNS
             ]
         )
         .sort(key_columns)
     )
     return rows
+
 
 import hashlib as pipeline_hashlib
 
@@ -3780,9 +3244,7 @@ def pipeline_build_blog_features(cache_dir, output_dir, refresh=False):
         data,
         qb_id_column="actual_qb_id",
     )
-    rows = offense_features_build_offense_rolling_features(
-        rows, tables["pbp_offense_plays"], tables["schedules"], data
-    )
+    rows = offense_features_build_offense_rolling_features(rows, tables["pbp_offense_plays"], tables["schedules"], data)
     rows = defense_features_build_defense_features(
         rows,
         tables["pbp_defense_plays"],
@@ -3794,23 +3256,17 @@ def pipeline_build_blog_features(cache_dir, output_dir, refresh=False):
     pbp = live_features_load_live_pbp(data, live, refresh=refresh)
     halftime = live_features_build_live_rows(rows, pbp, data, live)
     q1 = live_q1_features_build_q1_rows(halftime, pbp)
-    halftime = live_flow_features_build_live_flow_features(
-        halftime, pbp, live, data.season_type
-    )
+    halftime = live_flow_features_build_live_flow_features(halftime, pbp, live, data.season_type)
     teams_path = data.cache_dir / "teams.parquet"
     if refresh or not teams_path.exists():
         pipeline_nfl.load_teams().write_parquet(teams_path)
     teams = pipeline_pl.read_parquet(teams_path)
     result = {}
     for name, checkpoint in (("q1", q1), ("halftime", halftime)):
-        checkpoint = season_context_features_build_season_context_features(
-            checkpoint, tables["schedules"], teams
-        )
+        checkpoint = season_context_features_build_season_context_features(checkpoint, tables["schedules"], teams)
         checkpoint, _, _ = checkpoint_history_add_checkpoint_history(checkpoint)
         checkpoint.select(pipeline_blog_feature_columns())
-        checkpoint.write_parquet(
-            pipeline_Path(output_dir) / f"{name}_blog_features.parquet"
-        )
+        checkpoint.write_parquet(pipeline_Path(output_dir) / f"{name}_blog_features.parquet")
         result[name] = checkpoint
         print(
             f"{name}: {checkpoint.height} rows, {len(pipeline_blog_feature_columns())} candidates",
@@ -3823,7 +3279,5 @@ def pipeline_build_blog_features(cache_dir, output_dir, refresh=False):
             for block in iter(lambda: handle.read(1024 * 1024), b""):
                 digest.update(block)
         manifest[path.name] = digest.hexdigest()
-    (pipeline_Path(output_dir) / "feature_input_hashes.json").write_text(
-        pipeline_json.dumps(manifest, indent=2) + "\n"
-    )
+    (pipeline_Path(output_dir) / "feature_input_hashes.json").write_text(pipeline_json.dumps(manifest, indent=2) + "\n")
     return result
